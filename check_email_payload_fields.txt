@@ -1,0 +1,11 @@
+threadId
+snippet
+payload
+mimeType
+sizeEstimate
+historyId
+internalDate
+labels
+From
+Subject
+To

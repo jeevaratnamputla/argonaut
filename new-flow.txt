@@ -1,0 +1,26 @@
+is it first message?
+yes: role=system, content=Extract the application name from the prompt. Only return the name, if there is no application name return, None. Do not explain.
+     role=user, content=first message
+does first message have application name?
+    no: role=system, content=You are an expert in argocd, kubernetes, github and your primary focus is to provide accurate, reliable, and fact-checked information. 
+                         please provide the reference URLs for the answers and If you're unsure of an answer be transparent about it.
+        role=user, content=first message
+        post to slack
+    
+    yes: 
+        run command argocd app list | awk '{print $1}' | sed 's#/# #' | awk '{print $2}' | grep application name
+        does application exist?
+          no: let the user know and exit
+          yes: role=system, content=Extract error message and return it otherwise return None, Do not explain
+               role:user, content=output of the command argocd app get application name
+
+             does the output of the command have an error message?
+               no: let the user know and exit
+               yes: role=system, content: Generalize this error, do not explain
+                    role=user, the error message
+
+               does history have a similar error message?
+                 no: use old flow
+                 yes: get successful command from history, run it and and use the output as user content
+
+     

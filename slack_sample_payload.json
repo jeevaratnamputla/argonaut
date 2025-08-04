@@ -1,0 +1,57 @@
+{
+    "token": "tAnMbPiSDLhqtn1FoJawuQZC",
+    "team_id": "T1Y49JS6Q",
+    "context_team_id": "T1Y49JS6Q",
+    "context_enterprise_id": "None",
+    "api_app_id": "A07V72DSQEA",
+    "event": {
+        "user": "U0802HRH9NG",
+        "type": "message",
+        "ts": "1751470248.260789",
+        "bot_id": "B080005GN4T",
+        "app_id": "A07V72DSQEA",
+        "text": "someone resolved the issue or  opitons",
+        "team": "some team",
+        "bot_profile": {
+            "id": "someid",
+            "deleted": "False",
+            "name": "chatgpt-bot",
+            "updated": 1731036720,
+            "app_id": "A07V72DSQEA",
+            "user_id": "U0802HRH9NG",
+            "icons": {
+                "image_36": "https://a.slack-edge.com/80588/img/plugins/app/bot_36.png",
+                "image_48": "https://a.slack-edge.com/80588/img/plugins/app/bot_48.png",
+                "image_72": "https://a.slack-edge.com/80588/img/plugins/app/service_72.png"
+            },
+            "team_id": "T1Y49JS6Q"
+        },
+        "thread_ts": "1751470242.025849",
+        "parent_user_id": "UP2D62UG5",
+        "blocks": [
+            {
+                "type": "rich_text",
+                "block_id": "t/4",
+                "elements": [
+                    {
+                        "type": "rich_text_section",
+                        "elements": [
+                            {
+                                "type": "text",
+                                "text": "AI resolved the issue or further user input needed, type just HELP, all caps, for more opitons"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "channel": "C07UZLDJPQX",
+        "event_ts": "1751470248.260789",
+        "channel_type": "channel"
+    },
+    "type": "event_callback",
+    "event_id": "Ev09414SEBD3",
+    "event_time": 1751470248,
+    "is_ext_shared_channel": "False",
+    "event_context": "event_context"
+}

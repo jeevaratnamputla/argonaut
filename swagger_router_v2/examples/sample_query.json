@@ -1,0 +1,8 @@
+{
+  "query": "create application",
+  "expected_result": {
+    "tag": "ApplicationService",
+    "path": "/api/v1/applications",
+    "method": "POST"
+  }
+}

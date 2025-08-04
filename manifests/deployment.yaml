@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slack-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: slack-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: slack-bot
+    spec:
+      containers:
+        - name: main
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token 
+                  key: GITHUB_TOKEN
+            - name: ES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-master-credentials  # Name of the secret containing the slack-bot-token
+                  key: password  
+            - name: ES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-master-credentials  # Name of the secret containing the slack-bot-token
+                  key: username   
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: slack-bot-token  # Name of the secret containing the slack-bot-token
+                  key: SLACK_BOT_TOKEN
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: open-api-key  # Name of the secret containing the open api key
+                  key: OPENAI_API_KEY
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: slack-signing-secret  # Name of the secret containing the open api key
+                  key: SLACK_SIGNING_SECRET
+          envFrom:
+            - secretRef:
+                name: argocd-for-slack
+            - configMapRef:
+                name: external-config              
+          image: gopalvithaljayanthi/slack-bot:v7
+          imagePullPolicy: Always
+          command: ["python"]
+          args: ["/app/main.py"]
+          #command: ["sleep", "infinity"]
+          ports:
+            - containerPort: 5000
+              name: http
+          volumeMounts:   
+            - name: selfdiagnose
+              mountPath: "/app/selfdiagnose.py" 
+              subPath: "selfdiagnose.py"        
+            - name: count-tokens
+              mountPath: "/app/count_tokens.py"
+              subPath: "count_tokens.py"                
+            - name: chatgpt
+              mountPath: "/app/chatgpt.py"
+              subPath: "chatgpt.py"
+            - name: elastic
+              mountPath: "/app/elastic.py"
+              subPath: "elastic.py"
+            - name: slack
+              mountPath: "/app/slack.py"
+              subPath: "slack.py"
+            - name: git-auth
+              mountPath: "/app/git_config.py"
+              subPath: "git_config.py"
+            - name: argocd-auth
+              mountPath: "/app/argocd_auth.py"
+              subPath: "argocd_auth.py"
+            - name: slack-bot-script
+              mountPath: "/app/main.py"
+              subPath: "main.py"
+            - name: run-command-script
+              mountPath: "/app/run-command.py"
+              subPath: "run-command.py"
+            - name: es-ca-crt
+              mountPath: "/app/ca.crt"
+              subPath: "ca.crt"
+            - name: kubeconfigs
+              mountPath: "/root/.kube/"
+      serviceAccount: slack-bot
+      serviceAccountName: slack-bot
+      volumes: 
+        - name: selfdiagnose
+          configMap:
+            name: selfdiagnose
+        - name: count-tokens
+          configMap:
+            name: count-tokens           
+        - name: chatgpt
+          configMap:
+            name: chatgpt
+        - name: elastic
+          configMap:
+            name: elastic
+        - name: slack
+          configMap:
+            name: slack
+        - name: git-auth
+          configMap:
+            name: git-config
+        - name: argocd-auth
+          configMap:
+            name: argocd-auth
+        - name: slack-bot-script
+          configMap:
+            name: slack-bot
+        - name: run-command-script
+          configMap:
+            name: run-command
+        - name: es-ca-crt
+          secret:
+            secretName: elasticsearch-master-certs
+        - name: kubeconfigs
+          secret:
+            secretName: kubeconfigs
