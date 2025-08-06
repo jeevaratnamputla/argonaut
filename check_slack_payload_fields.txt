@@ -1,4 +1,0 @@
-event
-type
-event.ts
-event.text
