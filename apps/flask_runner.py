@@ -40,8 +40,9 @@ def auth_loop():
         logging.info("Running Argo CD login...")
         authenticate_with_argocd()
         time.sleep(86400)
-
-git_config.setup_git()
+        
+if os.getenv("GIT_USER_EMAIL"):
+    git_config.setup_git()
 
 # Return 400 for any other route
 @app.errorhandler(404)
