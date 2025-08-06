@@ -52,30 +52,23 @@ max_response_tokens = os.getenv("max_response_tokens", 200)
 max_response_tokens = int(max_response_tokens)  # Ensure it's an integer
 temperature = os.getenv("temperature", 0.0)
 temperature = float(temperature)  # Ensure it's a float
-help_message = """This assistant, Argonaut produces commands, each with a comment. Does not produce a lot of text.
+help_message = """This assistant, Spinnaut produces commands, each with a comment. Does not produce a lot of text.
 USE CAUTION! and your own judgement to run these commands while using AUTORUN=false
 Context is preserved in threads NOT in channel.
 Each new thread has a new context and will not be related to other threads.
 use RUN to run a command example: RUN kubectl get pods, using just RUN will run the last command suggested by the bot.
-only kubectl, argocd and gh commands are allowed
+only kubectl commands are allowed
 use SUMMARIZE to get a summary of the conversation so far, example: SUMMARIZE
-use GIT-FIX with your fix description example: GIT-FIX fix the typ to create a PR for it. the repo is cloned the file fixed, a new branch created and the file is added committed and pushed.
-use GIT-PR to create a PR for the fix done by GIT-FIX
-use GIT-MERGE to merge the PR created by GIT-PR and sync the application.
 """
 
 MOSIMPORTANT = """
             Always make the response be brief.
             You either recommend the command in the correct format or provide a brief answer to the user or ask user for more information.
-            If user message has a specific application name then get the application name from the prompt
-            and recommend ``` argocd app get applicationName -o json | jq -r '.status' | jq -c ```.
-            If user is not specific about the application name then do not recommend any commands, send a brief answer to the user asking for more information.
-            If you recommend commands make sure they are in this format
             # This is a single line comment
             ``` This is a command ```
             example:
             # To get the application status json    
-            ``` argocd app get applicationName -o json | jq -r '.status' | jq -c ```
+            ``` kubectl get sts -o json | jq -r '.status' | jq -c ```
     """
 #summary_report = diagnose_system()
 system_text = create_system_text()
@@ -90,11 +83,7 @@ ES_EXT_URL = os.getenv("ES_EXT_URL")
 def summarize_conversation(es, thread_ts, max_response_tokens, temperature, logger):
     role = "user"
     content = (
-        "Summarize this conversation and preserve critical information, the application url "
-        "including cluster, namespace, repo, branch and path where relevant, "
-        "for further use. Do not omit any information; rephrase and combine "
-        "if needed, but preserve all facts. Show output starting with SUMMARY:"
-        "give the user the argocd application url example https://argocd-server/applications/applicationNAme, not the kubernetes cluster url. give the user a github URL that includes the branch and path example https://github.com/opsmx-cnoe/naveen/tree/branch/path-from "
+        "Summarize this conversation and preserve critical information"
     )
 
     update_message( thread_ts, role, content, logger=logger)
@@ -185,7 +174,7 @@ def handle_event_text(payload, logger):
     if isFirstMessage == "true":
         logger.warning("isFirstMessage is true")
         #response = "NAUT Follow the conversation here %s/%s/_doc/%s?pretty=true" % (ES_EXT_URL, es_index, thread_ts)
-        response = "NAUT Follow the conversation here https://slack-bot.opencd.opsmx.org/threads/%s" % (thread_ts)
+        response = "NAUT Follow the conversation here https://spinnaut.opencd.opsmx.org/threads/%s" % (thread_ts)
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
@@ -203,7 +192,7 @@ def handle_event_text(payload, logger):
             newpayload["text"] = "RUN"
             handle_event_text(newpayload, logger)
         else:
-            response = "NAUT type RUN all caps to run this command" + response
+            response = "NAUT " + response
             send_response(payload, thread_ts, response, logger)
         payload["isFirstMessage"] = "false"
         return
