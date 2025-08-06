@@ -77,9 +77,9 @@ MOSIMPORTANT = """
             # To get the application status json    
             ``` argocd app get applicationName -o json | jq -r '.status' | jq -c ```
     """
-summary_report = diagnose_system()
+#summary_report = diagnose_system()
 system_text = create_system_text()
-system_text += summary_report
+#system_text += summary_report
 
 es_index = os.getenv("es_index")
 ES_EXT_URL = os.getenv("ES_EXT_URL")
