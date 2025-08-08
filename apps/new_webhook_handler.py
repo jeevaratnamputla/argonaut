@@ -46,7 +46,7 @@ AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
 
 
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
-
+CONVERSATION_URL = os.getenv("CONVERSATION_URL")
 model=os.getenv("model", "gpt-4.1")
 max_response_tokens = os.getenv("max_response_tokens", 200)
 max_response_tokens = int(max_response_tokens)  # Ensure it's an integer
@@ -174,7 +174,7 @@ def handle_event_text(payload, logger):
     if isFirstMessage == "true":
         logger.warning("isFirstMessage is true")
         #response = "NAUT Follow the conversation here %s/%s/_doc/%s?pretty=true" % (ES_EXT_URL, es_index, thread_ts)
-        response = "NAUT Follow the conversation here https://spinnaut.opencd.opsmx.org/threads/%s" % (thread_ts)
+        response = "NAUT Follow the conversation here https://{CONVERSATION_URL}/threads/%s" % (thread_ts)
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
