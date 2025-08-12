@@ -1,8 +1,9 @@
 FROM python:3.11.3-slim
 
+
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y curl git jq gnupg && \
+    apt-get install -y curl git jq gnupg unzip && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null && \
     echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
     apt-get update && \
@@ -13,6 +14,7 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl
 
+
 # Install Argo CD CLI
 RUN curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v2.13.6/argocd-linux-amd64 && \
     chmod +x /usr/local/bin/argocd
@@ -20,6 +22,12 @@ RUN curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/relea
 # Install yq
 RUN curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && \
     chmod +x /usr/local/bin/yq
+
+
+RUN curl -sSL -o /usr/local/bin/spin https://storage.googleapis.com/spinnaker-artifacts/spin/$(curl -s https://storage.googleapis.com/spinnaker-artifacts/spin/latest)/linux/amd64/spin && \
+ chmod +x /usr/local/bin/spin
+
+
 
 # Set working directory
 WORKDIR /app
@@ -35,5 +43,5 @@ COPY apps/*.py /app
 EXPOSE 5000
 
 # Run the application
-CMD ["python", "app/flask_runner.py"]
+CMD ["python", "flask_runner.py"]
 
