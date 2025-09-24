@@ -4,6 +4,8 @@ FROM python:3.11.9-slim-bookworm
 # Install dependencies and cve's
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+      libsqlite3-0 \
+      libgnutls30 \
       libexpat1 \
       libkrb5-3 \
       libgssapi-krb5-2 \
