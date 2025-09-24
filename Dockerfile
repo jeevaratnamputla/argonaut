@@ -1,4 +1,4 @@
-FROM golang:1.20.3-slim-bookworm AS builder
+FROM golang:1.20.4-slim-bookworm AS builder
 FROM python:3.11.9-slim-bookworm
 
 # Install dependencies and cve's
@@ -17,7 +17,7 @@ RUN apt-get update && \
       jq \
       gnupg \
       unzip \
-      && apt-get install -y --only-upgrade libexpat1 \
+      && apt-get install -y --only-upgrade libexpat1 libsqlite3-0 \
       && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI
