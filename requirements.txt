@@ -29,4 +29,3 @@ PyYAML==6.0
 langchain==0.2.0
 langchain-core==0.1.52
 langchain-openai==0.0.6
-
