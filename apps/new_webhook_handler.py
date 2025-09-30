@@ -161,8 +161,8 @@ def send_response(payload, thread_ts, response, logger):
             args = [sys.executable, poster, "--space", space_name or "", "--text", reply]
             if thread_name:
                args += ["--thread", thread_name]
-               log.warning("POSTER_SCRIPT=%r", poster)
-               log.warning("Spawning post_message.py with args: %r", args)
+               logger.warning("POSTER_SCRIPT=%r", poster)
+               logger.warning("Spawning post_message.py with args: %r", args)
 
             try:
                subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
