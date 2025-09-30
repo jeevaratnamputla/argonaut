@@ -173,7 +173,7 @@ def send_response(payload, thread_ts, response, logger):
             logger.warning(f"Unknown IO_type '{io_type}' — cannot send response.")
 
 def handle_event_text(payload, logger):
-    event_text = payload.get("text")    
+    event_text = payload.get("text").strip()    
     thread_ts = payload.get("thread_ts")
     if event_text is None:
         logger.warning("event_text is None — take a look at payload: %s", payload)
