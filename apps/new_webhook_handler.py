@@ -190,7 +190,7 @@ def handle_event_text(payload, logger):
             return {"reponse": "Message not meant for Argonaut"} 
 
     isFirstMessage = payload.get("isFirstMessage")
-    if isFirstMessage == "true":
+    if str(isFirstMessage).lower() == "true":
         logger.warning("isFirstMessage is true")
         #response = "NAUT Follow the conversation here %s/%s/_doc/%s?pretty=true" % (ES_EXT_URL, es_index, thread_ts)
         #response = "NAUT Follow the conversation here https://CONVERSATION_URL/threads/%s" % (thread_ts)
