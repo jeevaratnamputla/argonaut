@@ -150,6 +150,25 @@ def send_response(payload, thread_ts, response, logger):
             post_message_to_slack(channel_id, response, thread_ts)
         case "email":
             send_email_to_user(thread_ts, response, logger)
+        case "google_chat":
+            # ---------------- Config ----------------
+            POSTER_SCRIPT = os.getenv("POSTER_SCRIPT", "/app/post_google_chat_message.py")
+            poster = os.getenv("POSTER_SCRIPT", POSTER_SCRIPT)
+            channel_id = payload.get("channel")
+            space_name = payload.get("channel")
+            reply = response
+            thread_name = thread_ts
+            args = [sys.executable, poster, "--space", space_name or "", "--text", reply]
+            if thread_name:
+               args += ["--thread", thread_name]
+               log.warning("POSTER_SCRIPT=%r", poster)
+               log.warning("Spawning post_message.py with args: %r", args)
+
+            try:
+               subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+               log.error("Failed to spawn post_message.py: %s", e)
+                #post_message_to_google_chat(channel_id, response, thread_ts, logger)            
         case _:
             logger.warning(f"Unknown IO_type '{io_type}' — cannot send response.")
 
