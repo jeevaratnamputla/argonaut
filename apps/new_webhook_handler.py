@@ -157,7 +157,7 @@ def send_response(payload, thread_ts, response, logger):
             channel_id = payload.get("channel")
             space_name = payload.get("channel")
             reply = response
-            thread_name = thread_ts
+            thread_name = f"{space_name}/threads/{thread_ts}"
             args = [sys.executable, poster, "--space", space_name or "", "--text", reply]
             if thread_name:
                args += ["--thread", thread_name]
