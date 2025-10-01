@@ -52,7 +52,7 @@ max_response_tokens = os.getenv("max_response_tokens", 200)
 max_response_tokens = int(max_response_tokens)  # Ensure it's an integer
 temperature = os.getenv("temperature", 0.0)
 temperature = float(temperature)  # Ensure it's a float
-help_message = """This assistant, Spinnaut produces commands, each with a comment. Does not produce a lot of text.
+help_message = """This assistant, Argonaut, produces commands, each with a comment. Does not produce a lot of text.
 USE CAUTION! and your own judgement to run these commands while using AUTORUN=false
 Context is preserved in threads NOT in channel.
 Each new thread has a new context and will not be related to other threads.
