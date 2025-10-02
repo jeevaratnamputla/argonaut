@@ -414,7 +414,7 @@ def handle_event_text(payload, logger):
             else:
                 logger.info("AUTO_RUN set to to False so asking user to issue RUN Keyword %s", response)
                 #response = "``` " + response + " ```"
-                response = "NAUT type RUN all caps to run this command, if supplied  " + response
+                response = "NAUT " + response + " type RUN all caps to run the command supplied OR type RUN your-own-command here to run your own"  
                 send_response(payload, thread_ts, response, logger)
 
 def route_source(request, logger):
