@@ -47,6 +47,7 @@ NAUT_HTTP_CONNECT_TIMEOUT="${NAUT_HTTP_CONNECT_TIMEOUT:-10}" # seconds to establ
 NAUT_HTTP_MAX_TIME="${NAUT_HTTP_MAX_TIME:-0}"               # 0 = no overall limit (wait forever)
 
 ARGONAUT_THREADS_PATH="${ARGONAUT_THREADS_PATH:-/threads}"
+thread_dir_fallback() { printf '%s/threads/%s' "$NAUT_HOME" "$1"; }
 
 
 # ---------- Helpers ----------
@@ -388,18 +389,59 @@ cmd_status() {
   fi
 }
 
+# cmd_thread_ls() {
+#   load_config
+#   shopt -s nullglob
+#   for d in "$THREADS_DIR"/*; do
+#     [[ -d "$d" ]] || continue
+#     local name; name="$(basename "$d")"
+#     local t_raw="$name"
+#     # Display fs-safe back to raw (reverse replacement of '__' -> '/')
+#     local t_disp="${t_raw//__/\/}"
+#     printf "%s\n" "$t_disp"
+#   done
+# }
 cmd_thread_ls() {
-  load_config
-  shopt -s nullglob
+  # Use current thread unless one is given: `naut.sh thread ls [<thread_ts>]`
+  # local thread_ts="${1:-}"
+  # [[ -n "$thread_ts" ]] || thread_ts="$(current_thread_get)" || {
+  #   echo "thread ls: no current thread set" >&2; return 1; }
+
+  # Resolve the thread directory (use existing thread_dir if present, else fallback)
+  # local dir
+  # if declare -F thread_dir >/dev/null 2>&1; then
+  #   dir="$(thread_dir "$thread_ts")"
+  # else
+  #   dir="$(thread_dir_fallback "$thread_ts")"
+  # fi
+  
+  
   for d in "$THREADS_DIR"/*; do
     [[ -d "$d" ]] || continue
-    local name; name="$(basename "$d")"
-    local t_raw="$name"
-    # Display fs-safe back to raw (reverse replacement of '__' -> '/')
-    local t_disp="${t_raw//__/\/}"
-    printf "%s\n" "$t_disp"
+     local dir; dir="$(basename "$d")"
+
+     #echo this dir value $dir >&2
+
+  local f="$THREADS_DIR/$dir/last_run.json"
+  local json="{}"
+
+  if [[ -f "$f" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      json="$(jq -c '.' < "$f")"            # compact JSON as requested
+    else
+      # Fallback: no jq -> print the file (may be multi-line)
+      json="$(cat "$f")"
+    fi
+  else
+    json="{}"
+  fi
+
+  # One-line: <thread_ts> <compact-json>
+  #printf '%s %s\n' "$dir" "$json"
+  printf '%s %.50s\n' "$dir" "$json"
   done
 }
+
 
 cmd_thread_use() {
   load_config
@@ -663,7 +705,8 @@ cmd_wait() {
 #echo "thread ls: using thread_ts='$thread_ts'" >&2
 
 
-  echo "[naut] Checking thread $thread_ts ..."
+  echo "[naut] Checking thread "$ARGONAUT_URL"/threads/"$thread_ts" 
+  echo you can follow this actual LLM conversation of this meta coversation here"
   echo ---------------------------------------------
   local msg; msg="$(get_last_assistant_message "$thread_ts")" || {
     err "Failed to fetch thread or parse response."
