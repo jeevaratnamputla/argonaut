@@ -204,18 +204,23 @@ def handle_event_text(payload, logger):
         role = "user"
         content = event_text + MOSIMPORTANT
         update_message( thread_ts, role, content, logger=logger)
-        response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
-        role = "assistant"
-        content = response
-        update_message( thread_ts, role, content, logger=logger)
-        if AUTO_RUN:
-            newpayload = payload
-            newpayload["text"] = "RUN"
-            handle_event_text(newpayload, logger)
-        else:
-            response = "NAUT " + response
-            send_response(payload, thread_ts, response, logger)
+        #response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+        #role = "assistant"
+        #content = response
+        #update_message( thread_ts, role, content, logger=logger)
+        #if AUTO_RUN:
+        #    newpayload = payload
+         #   newpayload["text"] = "RUN"
+         #   newpayload["isFirstMessage"] = "false"
+         #   handle_event_text(newpayload, logger)
+       # else:
+       #     response = "NAUT " + response
+       #     send_response(payload, thread_ts, response, logger)
+       
         payload["isFirstMessage"] = "false"
+        newpayload = payload
+        #newpayload["isFirstMessage"] = "false"
+        handle_event_text(newpayload, logger)
         return
     #logger.info("thread_ts in handle_event_text is: %s", thread_ts) # this is the thread_ts in handle_event_text 
     match event_text:
@@ -385,7 +390,7 @@ def handle_event_text(payload, logger):
             
             logger.info("Command: %s | Command output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
             response = f"Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
-            #send_response(payload, thread_ts, response, logger)
+            send_response(payload, thread_ts, response, logger)
             command_output_handler_text = "Be brief. Less than 50 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             role = "user"
             content = command_output_handler_text + "\n" + response
