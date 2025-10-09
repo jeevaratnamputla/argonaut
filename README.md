@@ -1,4 +1,4 @@
-# slack chatgpt bot  
+# Slack chatgpt bot  
 pre-requisites  
 1. slack app set up ( see slack.md)  
 2. elasticsearch install ( helm install elasticsearch)  
