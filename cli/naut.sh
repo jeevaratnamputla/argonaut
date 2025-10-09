@@ -227,7 +227,8 @@ log_history() {
   local thread_ts="$1"; shift
   thread_ts="$(sanitize_thread_ts "$thread_ts")"
   local dir; dir="$(thread_dir "$thread_ts")"
-  printf '[%(%Y-%m-%d %H:%M:%S)T] %s\n' -1 "$*" >> "$dir/history.log"
+  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  printf '[%s] %s\n' "$ts" "$*" >> "$dir/history.log"
 }
 
 post_json() {
