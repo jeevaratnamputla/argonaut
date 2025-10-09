@@ -38,6 +38,7 @@ jobs:
           echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Build and push Docker image
+        id: docker_build
         uses: docker/build-push-action@v3
         with:
           context: .
@@ -45,3 +46,8 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:${{ env.DATE }}-${{ github.sha }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:latest
+
+      - name: Print image digests
+        run: |
+          echo "Digest for latest tag: ${{ steps.docker_build.outputs.digest }}"
+          echo "Digest for commit ID tag: ${{ steps.docker_build.outputs.digest }}"
