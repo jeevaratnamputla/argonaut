@@ -42,4 +42,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:${{ env.DATE }}-${{ github.sha }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:${{ env.DATE }}-${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:latest
