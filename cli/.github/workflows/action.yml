@@ -1,0 +1,11 @@
+name: Trigger on Main
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo Message
+        run: echo "hello I got Triggered"
