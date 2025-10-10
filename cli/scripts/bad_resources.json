@@ -1,0 +1,33 @@
+[
+  {
+    "application": "argocd-app",
+    "resources": [
+      {
+        "kind": "Application",
+        "name": "prometheus"
+      }
+    ]
+  },
+  {
+    "application": "argocd-c1",
+    "resources": [
+      {
+        "kind": "ConfigMap",
+        "name": "argocd-rbac-cm"
+      },
+      {
+        "kind": "Ingress",
+        "name": "argocd-c1-server"
+      }
+    ]
+  },
+  {
+    "application": "kube-prometheus-stack-app",
+    "resources": [
+      {
+        "kind": "StatefulSet",
+        "name": "kube-prometheus-stack-app-grafana"
+      }
+    ]
+  }
+]
