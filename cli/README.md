@@ -1,5 +1,6 @@
 # 🧭 Argonaut CLI (`naut.sh`)
-
+## pre-requisites
+bash, curl jq, argonaut credentials
 ## Overview
 
 **Argonaut CLI** — known as `naut.sh` — is a lightweight **command-line interface for interacting with the Argonaut AI assistant**.  
