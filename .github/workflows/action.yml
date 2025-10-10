@@ -51,3 +51,12 @@ jobs:
         run: |
           echo "Digest for latest tag: ${{ steps.docker_build.outputs.digest }}"
           echo "Digest for commit ID tag: ${{ steps.docker_build.outputs.digest }}"
+      - name: Verify image existence on Docker Hub
+        run: |
+          token=$(curl -s -X POST https://hub.docker.com/v2/users/login/ -d '{"username": "${{ secrets.DOCKER_USERNAME }}", "password": "${{ secrets.DOCKER_PASSWORD }}"}' -H "Content-Type: application/json" | jq -r .token)
+          response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: JWT $token" https://hub.docker.com/v2/repositories/${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}/tags/${{ env.DATE }}-${{ github.sha }})
+          if [ "$response" -eq 200 ]; then
+            echo "Image with tag ${{ env.DATE }}-${{ github.sha }} exists in the repository."
+          else
+            echo "Image with tag ${{ env.DATE }}-${{ github.sha }} does not exist in the repository."
+          fi
