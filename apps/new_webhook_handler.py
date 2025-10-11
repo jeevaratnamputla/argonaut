@@ -12,7 +12,9 @@ import git_config
 from slack import post_message_to_slack, get_bot_user_id, verify_slack_request, get_thread_ts_from_reaction
 #from elastic import ensure_index_exists, get_es_client, update_elasticsearch, set_summary_index_es, get_thread_messages, update_reaction
 from generic_storage import ensure_index_exists, update_message, set_summary_index, get_thread_messages, update_reaction
-from chatgpt import get_chatgpt_response
+#from chatgpt import get_chatgpt_response
+from call_llm import get_llm_response
+from 
 import html
 import re
 from count_tokens import count_tokens
@@ -92,7 +94,7 @@ def summarize_conversation(es, thread_ts, max_response_tokens, temperature, logg
     logger.debug("Summarizing: %s", json.dumps(messages))
     logger.info("Summarizing...........................................................................")
 
-    response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+    response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
     role = "assistant"
     content = response
     update_message( thread_ts, role, content, logger=logger)
@@ -204,7 +206,7 @@ def handle_event_text(payload, logger):
         role = "user"
         content = event_text + MOSIMPORTANT
         update_message( thread_ts, role, content, logger=logger)
-        #response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+        #response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
         #role = "assistant"
         #content = response
         #update_message( thread_ts, role, content, logger=logger)
@@ -230,7 +232,7 @@ def handle_event_text(payload, logger):
             command_output_handler_text = "Be brief. Less than 50 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             content = command_output_handler_text + "\n" + event_text
             update_message( thread_ts, role, content, logger=logger)
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
@@ -274,7 +276,7 @@ def handle_event_text(payload, logger):
                 anything_more_text = "Are you sure you cannot think of any further ways to help the user, the info you are asking for, can you get it yourself with the available tools. If you think user has all the information, do not recommend any commands."
                 content = anything_more_text 
                 update_message( thread_ts, role, content, logger=logger)
-                response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+                response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
                 role = "assistant"
                 
                 content = response
@@ -296,7 +298,7 @@ def handle_event_text(payload, logger):
                 role = "user"
                 content = command_output_handler_text + "\n" + response
                 update_message( thread_ts, role, content, logger=logger)
-                response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+                response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
                 role = "assistant"
                 content = response
                 update_message( thread_ts, role, content, logger=logger)
@@ -326,7 +328,7 @@ def handle_event_text(payload, logger):
             role = "user"
             content = event_text 
             update_message( thread_ts, role, content, logger=logger)            
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)           
@@ -347,7 +349,7 @@ def handle_event_text(payload, logger):
             role = "user"
             content = event_text 
             update_message( thread_ts, role, content, logger=logger)            
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
@@ -367,7 +369,7 @@ def handle_event_text(payload, logger):
             role = "user"
             content = event_text 
             update_message( thread_ts, role, content, logger=logger)            
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
@@ -395,7 +397,7 @@ def handle_event_text(payload, logger):
             role = "user"
             content = command_output_handler_text + "\n" + response
             update_message( thread_ts, role, content, logger=logger)
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
@@ -406,7 +408,7 @@ def handle_event_text(payload, logger):
             role = "user"
             content = event_text
             update_message( thread_ts, role, content, logger=logger)            
-            response = get_chatgpt_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
