@@ -59,6 +59,7 @@ echo "$input" | jq -c '.[]' | while read -r app; do
           # Construct the GitHub diff URL
           if [ -n "$source_rev1" ] && [ -n "$source_rev2" ]; then
             diff_url="${repo_url_no_git}/compare/${source_rev2}...${source_rev1}"
+            ./scripts/iterate_over_files.sh $repo_url_no_git ${source_rev2} ${source_rev1}
             echo "GitHub Diff URL: $diff_url"
           else
             echo "Revisions not found for GitHub repo: $repo_url"
