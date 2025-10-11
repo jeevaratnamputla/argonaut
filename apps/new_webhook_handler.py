@@ -25,8 +25,6 @@ from create_system_text import create_system_text
 from execute_run_command import execute_run_command
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
-
-
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
 CONVERSATION_URL = os.getenv("CONVERSATION_URL")
 model=os.getenv("model", "gpt-4.1")
@@ -209,7 +207,7 @@ def handle_event_text(payload, logger):
         #This should be moved to n8n
         case _ if event_text.startswith("TOOL"):
             role = "user"
-            command_output_handler_text = "Be brief. Less than 50 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
+            command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             content = command_output_handler_text + "\n" + event_text
             update_message( thread_ts, role, content, logger=logger)
             response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
@@ -274,13 +272,15 @@ def handle_event_text(payload, logger):
                 logger.info("Command: %s | Command Output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
                 
                 response = f"TOOL Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
-                command_output_handler_text = "Be brief. Less than 50 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
+                #whatif the response is too long
+                command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
                 role = "user"
                 content = command_output_handler_text + "\n" + response
                 update_message( thread_ts, role, content, logger=logger)
                 response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
                 role = "assistant"
                 content = response
+                response = "NAUT " + response
                 update_message( thread_ts, role, content, logger=logger)
                 send_response(payload, thread_ts, response, logger)
 
@@ -372,15 +372,18 @@ def handle_event_text(payload, logger):
             
             logger.info("Command: %s | Command output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
             response = f"Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
-            send_response(payload, thread_ts, response, logger)
-            command_output_handler_text = "Be brief. Less than 50 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
+            #whatif response is too big?
+            command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             role = "user"
             content = command_output_handler_text + "\n" + response
             update_message( thread_ts, role, content, logger=logger)
+            response = "NAUT " + response
+            send_response(payload, thread_ts, response, logger)
             response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
             role = "assistant"
             content = response
             update_message( thread_ts, role, content, logger=logger)
+            response = "NAUT " + response
             send_response(payload, thread_ts, response, logger)
             return response
 
