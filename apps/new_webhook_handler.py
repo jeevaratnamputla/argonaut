@@ -14,7 +14,6 @@ from slack import post_message_to_slack, get_bot_user_id, verify_slack_request, 
 from generic_storage import ensure_index_exists, update_message, set_summary_index, get_thread_messages, update_reaction
 #from chatgpt import get_chatgpt_response
 from call_llm import get_llm_response
-from 
 import html
 import re
 from count_tokens import count_tokens
