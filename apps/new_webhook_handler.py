@@ -38,17 +38,21 @@ Context is preserved in threads NOT in channel.
 Each new thread has a new context and will not be related to other threads.
 use RUN to run a command example: RUN kubectl get pods, using just RUN will run the last command suggested by the bot.
 only kubectl commands are allowed
-use SUMMARIZE to get a summary of the conversation so far, example: SUMMARIZE
+use SUMMARIZE to get a summary of the conversation so for, example: SUMMARIZE
 """
 
-MOSIMPORTANT = """
+#whatfi we can custom first message through this variable
+MOST_IMPORTANT = """
             Always make the response be brief.
-            You either recommend the command in the correct format or provide a brief answer to the user or ask user for more information.
+            or provide a brief answer to the user or ask user for more information.
+            You either recommend a command or a script  or both or neither.
+            You either recommend the command in the correct format 
             # This is a single line comment
             ``` This is a command ```
             example:
             # To get the application status json    
             ``` kubectl get sts -o json | jq -r '.status' | jq -c ```
+            # if 
     """
 #summary_report = diagnose_system()
 system_text = create_system_text()
@@ -182,7 +186,7 @@ def handle_event_text(payload, logger):
         logger.info("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
         update_message( thread_ts, role, content, logger=logger)
         role = "user"
-        content = event_text + MOSIMPORTANT
+        content = event_text + MOST_IMPORTANT
         update_message( thread_ts, role, content, logger=logger)
         #response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
         #role = "assistant"
@@ -207,7 +211,7 @@ def handle_event_text(payload, logger):
         #This should be moved to n8n
         case _ if event_text.startswith("TOOL"):
             role = "user"
-            command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
+            command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             content = command_output_handler_text + "\n" + event_text
             update_message( thread_ts, role, content, logger=logger)
             response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
@@ -270,10 +274,11 @@ def handle_event_text(payload, logger):
             else:
                 output = execute_run_command(command, logger=logger) 
                 logger.info("Command: %s | Command Output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
-                
+                #whatif the return code is not 0?
+                # we need to log the error and the resolution in a persisten location thread agnostic
                 response = f"TOOL Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
                 #whatif the response is too long
-                command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
+                command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
                 role = "user"
                 content = command_output_handler_text + "\n" + response
                 update_message( thread_ts, role, content, logger=logger)
@@ -373,7 +378,7 @@ def handle_event_text(payload, logger):
             logger.info("Command: %s | Command output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
             response = f"Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
             #whatif response is too big?
-            command_output_handler_text = "Be brief. Less than 100 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
+            command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
             role = "user"
             content = command_output_handler_text + "\n" + response
             update_message( thread_ts, role, content, logger=logger)
