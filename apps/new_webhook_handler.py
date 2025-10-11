@@ -18,8 +18,8 @@ import html
 import re
 from count_tokens import count_tokens
 #from argocd_diagnose import run_diagnosis
-from summarize_text import summarize_text
-from selfdiagnose import diagnose_system
+#from summarize_text import summarize_text
+#from selfdiagnose import diagnose_system
 from create_system_text import create_system_text
 #from argocd_flow import process_prompt
 
