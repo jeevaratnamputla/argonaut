@@ -88,7 +88,7 @@ def handle_event_text(payload, logger):
     if str(isFirstMessage).lower() == "true":
         logger.warning("isFirstMessage is true")
         response = "Follow the conversation here https://%s/threads/%s" % (CONVERSATION_URL, thread_ts)
-        response = "NAUT " + response + help_message
+        response = "NAUT " + response + "\n" + help_message
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
