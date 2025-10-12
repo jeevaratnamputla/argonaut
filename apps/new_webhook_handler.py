@@ -7,16 +7,16 @@ import os
 import time
 import threading
 from threading import Thread
-from argocd_auth import authenticate_with_argocd # to keep the argocd token fresh
+#from argocd_auth import authenticate_with_argocd # to keep the argocd token fresh
 import git_config
-from slack import post_message_to_slack, get_bot_user_id, verify_slack_request, get_thread_ts_from_reaction
+#from slack import post_message_to_slack, get_bot_user_id, verify_slack_request, get_thread_ts_from_reaction
 #from elastic import ensure_index_exists, get_es_client, update_elasticsearch, set_summary_index_es, get_thread_messages, update_reaction
 from generic_storage import ensure_index_exists, update_message, set_summary_index, get_thread_messages, update_reaction
 #from chatgpt import get_chatgpt_response
 from call_llm import get_llm_response
 import html
 import re
-from count_tokens import count_tokens
+#from count_tokens import count_tokens
 #from argocd_diagnose import run_diagnosis
 #from summarize_text import summarize_text
 #from selfdiagnose import diagnose_system
@@ -41,6 +41,7 @@ Each new thread has a new context and will not be related to other threads.
 use RUN to run a command example: RUN kubectl get pods, using just RUN will run the last command suggested by the bot.
 only kubectl commands are allowed
 use SUMMARIZE to get a summary of the conversation so for, example: SUMMARIZE
+type HELP for this message
 """
 
 #whatfi we can custom first message through this variable
@@ -72,7 +73,7 @@ def handle_event_text(payload, logger):
     if event_text is None:
         logger.warning("event_text is None — take a look at payload: %s", payload)
         return {"reponse": "No event_text in payload"} 
-    if event_text == "HELP":
+    if event_text.strip().upper() == "HELP":
             response = help_message
             response = "NAUT " + response
             send_response(payload, thread_ts, response, logger)
@@ -86,8 +87,8 @@ def handle_event_text(payload, logger):
     isFirstMessage = payload.get("isFirstMessage")
     if str(isFirstMessage).lower() == "true":
         logger.warning("isFirstMessage is true")
-        response = "NAUT Follow the conversation here https://%s/threads/%s" % (CONVERSATION_URL, thread_ts)
-
+        response = "Follow the conversation here https://%s/threads/%s" % (CONVERSATION_URL, thread_ts)
+        response = "NAUT " + response + help_message
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
@@ -96,22 +97,9 @@ def handle_event_text(payload, logger):
         role = "user"
         content = event_text + MOST_IMPORTANT
         update_message( thread_ts, role, content, logger=logger)
-        #response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
-        #role = "assistant"
-        #content = response
-        #update_message( thread_ts, role, content, logger=logger)
-        #if AUTO_RUN:
-        #    newpayload = payload
-         #   newpayload["text"] = "RUN"
-         #   newpayload["isFirstMessage"] = "false"
-         #   handle_event_text(newpayload, logger)
-       # else:
-       #     response = "NAUT " + response
-       #     send_response(payload, thread_ts, response, logger)
        
         payload["isFirstMessage"] = "false"
         newpayload = payload
-        #newpayload["isFirstMessage"] = "false"
         handle_event_text(newpayload, logger)
         return
     #logger.info("thread_ts in handle_event_text is: %s", thread_ts) # this is the thread_ts in handle_event_text 
