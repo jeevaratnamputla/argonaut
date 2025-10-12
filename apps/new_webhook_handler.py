@@ -23,6 +23,7 @@ from count_tokens import count_tokens
 from create_system_text import create_system_text
 #from argocd_flow import process_prompt
 from execute_run_command import execute_run_command
+from summarize_conversation import summarize_conversation
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
@@ -63,26 +64,6 @@ ES_EXT_URL = os.getenv("ES_EXT_URL")
 # Elasticsearch endpoint with authentication
 #s = get_es_client()
 #ensure_index_exists(logger)
-
-def summarize_conversation(es, thread_ts, max_response_tokens, temperature, logger):
-    role = "user"
-    content = (
-        "Summarize this conversation and preserve critical information"
-    )
-
-    update_message( thread_ts, role, content, logger=logger)
-
-    messages = get_thread_messages( thread_ts, logger=logger)
-    logger.debug("Summarizing: %s", json.dumps(messages))
-    logger.info("Summarizing...........................................................................")
-
-    response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
-    role = "assistant"
-    content = response
-    update_message( thread_ts, role, content, logger=logger)
-    set_summary_index(es,thread_ts,logger=logger)
-    return response
-
 
 def send_email_to_user(thread_ts, response, logger):
     """
