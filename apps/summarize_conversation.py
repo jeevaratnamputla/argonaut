@@ -21,5 +21,5 @@ def summarize_conversation(thread_ts, max_response_tokens, temperature, logger):
     role = "assistant"
     content = response
     update_message( thread_ts, role, content, logger=logger)
-    set_summary_index(es,thread_ts,logger=logger)
+    set_summary_index(thread_ts,logger=logger)
     return response
