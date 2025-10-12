@@ -24,6 +24,7 @@ from create_system_text import create_system_text
 #from argocd_flow import process_prompt
 from execute_run_command import execute_run_command
 from summarize_conversation import summarize_conversation
+from send_response import send_response
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
@@ -65,78 +66,6 @@ ES_EXT_URL = os.getenv("ES_EXT_URL")
 #s = get_es_client()
 #ensure_index_exists(logger)
 
-def send_email_to_user(thread_ts, response, logger):
-    """
-    Send payload to n8n webhook /reply-mail with body and thread_ts.
-
-    Parameters:
-        payload (dict): Must contain 'thread_ts' and 'response'.
-        logger (optional): Logger instance for logging.
-    
-    Returns:
-        dict: Response from n8n webhook or error details.
-    """
-    url = "http://n8n:5678/webhook/reply-mail"
-
-    logger.info("response as found in send_email_to_user: %s", response)
-
-    data = {
-        "thread_ts": thread_ts,
-        "response": response
-    }
-
-    try:
-        n8n_webhook_response = requests.post(url, json=data)
-        n8n_webhook_response.raise_for_status()
-
-        if logger:
-            logger.info("Sent to n8n send-mail: %s", data)
-
-        return
-
-    except requests.exceptions.RequestException as e:
-        if logger:
-            logger.exception("Failed to send to n8n webhook: %s", e)
-
-        return {
-            "status": "error",
-            "error": str(e)
-        }
-    
-def send_response(payload, thread_ts, response, logger):
-    io_type = payload.get("IO_type")
-
-    match io_type:
-        case "slack":
-            channel_id = payload.get("channel")
-            if not channel_id:
-                logger.warning("Slack IO_type but no channel_id in payload")
-                return
-            post_message_to_slack(channel_id, response, thread_ts)
-        case "email":
-            send_email_to_user(thread_ts, response, logger)
-        case "google_chat":
-            # ---------------- Config ----------------
-            POSTER_SCRIPT = os.getenv("POSTER_SCRIPT", "/app/post_google_chat_message.py")
-            poster = os.getenv("POSTER_SCRIPT", POSTER_SCRIPT)
-            channel_id = payload.get("channel")
-            space_name = payload.get("channel")
-            reply = response
-            thread_name = f"{space_name}/threads/{thread_ts}"
-            args = [sys.executable, poster, "--space", space_name or "", "--text", reply]
-            if thread_name:
-               args += ["--thread", thread_name]
-               logger.warning("POSTER_SCRIPT=%r", poster)
-               logger.warning("Spawning post_message.py with args: %r", args)
-
-            try:
-               subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception as e:
-               log.error("Failed to spawn post_message.py: %s", e)
-                #post_message_to_google_chat(channel_id, response, thread_ts, logger)            
-        case _:
-            logger.warning(f"Unknown IO_type '{io_type}' — cannot send response.")
-
 def handle_event_text(payload, logger):
     event_text = payload.get("text").strip()    
     thread_ts = payload.get("thread_ts")
@@ -157,8 +86,6 @@ def handle_event_text(payload, logger):
     isFirstMessage = payload.get("isFirstMessage")
     if str(isFirstMessage).lower() == "true":
         logger.warning("isFirstMessage is true")
-        #response = "NAUT Follow the conversation here %s/%s/_doc/%s?pretty=true" % (ES_EXT_URL, es_index, thread_ts)
-        #response = "NAUT Follow the conversation here https://CONVERSATION_URL/threads/%s" % (thread_ts)
         response = "NAUT Follow the conversation here https://%s/threads/%s" % (CONVERSATION_URL, thread_ts)
 
         send_response(payload, thread_ts, response, logger)
