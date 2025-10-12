@@ -5,7 +5,7 @@ from generic_storage import  update_message, set_summary_index, get_thread_messa
 #from chatgpt import get_chatgpt_response
 from call_llm import get_llm_response
 
-def summarize_conversation(es, thread_ts, max_response_tokens, temperature, logger):
+def summarize_conversation(thread_ts, max_response_tokens, temperature, logger):
     role = "user"
     content = (
         "Summarize this conversation and preserve critical information"

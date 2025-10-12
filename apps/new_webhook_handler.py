@@ -272,7 +272,6 @@ def handle_event_text(payload, logger):
 
         case "SUMMARIZE":
                 response = summarize_conversation(
-                    es=es,
                     thread_ts=thread_ts,
                     max_response_tokens=max_response_tokens,
                     temperature=temperature,
