@@ -1,19 +1,22 @@
 # review_argocd_command.py
 """
-Argocd command reviewer: validates subcommands and flags by walking `--help` trees
-and parsing "Available Commands", "Flags", "Global Flags", plus "Usage:" to infer
-required/optional positionals.
+Argo CD command reviewer.
 
-Usage from your code:
+- Walks `argocd ... --help` hierarchically (argocd, argocd app, argocd app get, ...)
+- Parses "Available Commands", "Flags" (non-global), "Global Flags"
+- Parses "Usage:" for the *exact* path to infer required/optional positionals
+- Validates subcommands and flags
+- Surfaces unknown flags, missing values
+- Suggests corrected command (e.g., manifest -> manifests; --app myapp -> positional)
+- Provides **non-global flags with help text** for the final subcommand
+
+Public API:
     from review_argocd_command import review_command
     res = review_command("argocd app manifest --app myapp -n argocd", logger=logger)
-    # res is a dict with keys: valid, errors, warnings, suggestions, corrected_command, ...
-
-This file includes a built-in `execute_run_command()` to avoid external imports.
 """
 
-import re
 import os
+import re
 import shlex
 import difflib
 import subprocess
@@ -24,12 +27,6 @@ from typing import Dict, List, Optional, Set, Tuple
 # Local runner (replaces execute_run_command)
 # =========================================
 def execute_run_command(cmd: str, logger=None, timeout: float = 15.0, cwd: Optional[str] = None) -> Dict[str, object]:
-    """
-    Execute a shell command safely and return {exit_code, stdout, stderr}.
-    - No TTY / paging (PAGER=cat, GIT_PAGER=cat) to avoid hangs in MSYS/Git Bash.
-    - Closes stdin; enforces timeout.
-    - On Windows, if command starts with 'argocd ' and lookup fails, tries 'argocd.exe'.
-    """
     if logger:
         logger.debug("execute_run_command: %s", cmd)
 
@@ -72,12 +69,9 @@ def execute_run_command(cmd: str, logger=None, timeout: float = 15.0, cwd: Optio
             except Exception:
                 pass
             out, err = proc.communicate()
-            return {
-                "exit_code": 124,
-                "stdout": out.decode(errors="replace") if out else "",
-                "stderr": (err.decode(errors="replace") if err else "") + "\n[timeout]",
-            }
-
+            return {"exit_code": 124,
+                    "stdout": out.decode(errors="replace") if out else "",
+                    "stderr": (err.decode(errors="replace") if err else "") + "\n[timeout]"}
         return {
             "exit_code": proc.returncode,
             "stdout": out.decode(errors="replace") if out else "",
@@ -100,19 +94,19 @@ def _is_executable_on_path(prog: str) -> bool:
     return False
 
 # =========================================
-# Command review
+# Data classes
 # =========================================
-
 @dataclass
 class FlagInfo:
     names: Set[str]           # e.g. {"-h", "--help"}
     takes_value: bool         # True if flag expects a value
     canonical: str            # choose a stable canonical form (long if available)
+    desc: str                 # help text from --help
 
 @dataclass
 class HelpInfo:
     subcommands: Set[str]
-    flags: Dict[str, 'FlagInfo']
+    flags: Dict[str, 'FlagInfo']          # non-global
     global_flags: Dict[str, 'FlagInfo']
     required_positionals: List[str]       # from Usage: unbracketed ALLCAPS tokens
     optional_positionals: List[str]       # from Usage: bracketed ALLCAPS tokens
@@ -120,6 +114,8 @@ class HelpInfo:
 @dataclass
 class ReviewResult:
     valid: bool
+    available_flags: List[str]
+    available_flags_with_help: List[Dict[str, object]]
     errors: List[str]
     warnings: List[str]
     corrected_command: Optional[str]
@@ -131,6 +127,9 @@ class ReviewResult:
     def to_dict(self):
         return asdict(self)
 
+# =========================================
+# Public entrypoint
+# =========================================
 def review_command(command: str, logger=None) -> Dict:
     if logger:
         logger.debug("Reviewing command: %s", command)
@@ -138,6 +137,8 @@ def review_command(command: str, logger=None) -> Dict:
     tokens = shlex.split(command)
     result = ReviewResult(
         valid=False,
+        available_flags=[],
+        available_flags_with_help=[],
         errors=[],
         warnings=[],
         corrected_command=None,
@@ -170,6 +171,16 @@ def review_command(command: str, logger=None) -> Dict:
         t = tokens[idx]
         if t.startswith("-"):
             break  # flags/args begin
+
+        # If this level has NO subcommands, the next non-flag is positional.
+        if not info.subcommands:
+            break
+
+        # If Usage for this level declares positionals, treat the next non-flag as positional.
+        if (info.required_positionals or info.optional_positionals) and t not in info.subcommands:
+            break
+
+        # Regular descent through known subcommands
         if t in info.subcommands:
             path.append(t)
             info = _get_help_info(path, help_cache, logger)
@@ -179,12 +190,11 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
 
-        # Unknown subcommand at this level → suggest closest matches
+        # Unknown token where subcommand expected → offer suggestions
         close = difflib.get_close_matches(t, sorted(info.subcommands), n=3, cutoff=0.6)
         result.errors.append(f"Unknown subcommand '{t}' under '{' '.join(path)}'.")
         if close:
             result.suggestions.append(f"Did you mean: {', '.join(close)} ?")
-            # Try a best-effort single correction to continue deeper validation
             t_best = close[0]
             result.warnings.append(f"Auto-trying suggested subcommand '{t_best}' for deeper checks.")
             path.append(t_best)
@@ -194,6 +204,7 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
         else:
+            # Can't descend further; treat remaining tokens as args/flags
             break
 
     result.parsed_path = path[:]
@@ -226,9 +237,7 @@ def review_command(command: str, logger=None) -> Dict:
                 close = difflib.get_close_matches(flag_name, sorted(name_to_flag.keys()), n=3, cutoff=0.65)
                 result.unknown_flags.append(flag_name)
                 if close:
-                    result.suggestions.append(
-                     f"Unknown flag '{flag_name}'. Did you mean: {', '.join(close)} ?"
-                )
+                    result.suggestions.append(f"Unknown flag '{flag_name}'. Did you mean: {', '.join(close)} ?")
                 consumed += 1
                 continue
 
@@ -251,15 +260,12 @@ def review_command(command: str, logger=None) -> Dict:
             consumed += 1
 
     # --- Positional validation from Usage ---
-    # info.required_positionals contains placeholders like ["APPNAME"]
-    # We enforce presence of at least the first positional where required.
     first_positional_idx = None
     scan_idx = idx
     while scan_idx < len(tokens):
         if not tokens[scan_idx].startswith("-"):
             first_positional_idx = scan_idx
             break
-        # skip flag + value when needed
         if "=" in tokens[scan_idx] or scan_idx + 1 >= len(tokens) or tokens[scan_idx + 1].startswith("-"):
             scan_idx += 1
         else:
@@ -284,6 +290,8 @@ def review_command(command: str, logger=None) -> Dict:
                 else:
                     cleaned = [t for t in cleaned if not t.startswith("--app=")]
                 cleaned = cleaned[:idx] + [app_name] + cleaned[idx:]
+                cleaned = _apply_corrected_path(cleaned, path)
+                cleaned = _strip_kubectl_ns(cleaned)
                 result.suggestions.append("Move the application name to a positional argument (no --app).")
                 result.corrected_command = " ".join(cleaned)
             else:
@@ -295,13 +303,12 @@ def review_command(command: str, logger=None) -> Dict:
                     result.warnings.append("Use positional APPNAME instead of --app for this subcommand.")
                     break
 
-    # --- Specific guidance for '-n' (kubectl-style) ---
+    # kubectl-style '-n <ns>' is not an Argo CD CLI flag
     for j in range(idx, len(tokens)):
         if tokens[j] == "-n" and j + 1 < len(tokens) and not tokens[j+1].startswith("-"):
             ns = tokens[j+1]
-            result.suggestions.append(
-                f"'-n {ns}' is not an Argo CD CLI flag. Remove '-n {ns}' or switch to a proper Argo CD CLI flag."
-            )
+            result.warnings.append(f"'-n {ns}' is not an Argo CD CLI flag.")
+            result.unknown_flags.append("-n")
             break
 
     # Valid?
@@ -310,15 +317,37 @@ def review_command(command: str, logger=None) -> Dict:
     else:
         suggested_tokens = _maybe_build_correction(tokens, path, help_cache, logger)
         if suggested_tokens and suggested_tokens != tokens:
-            # prefer any earlier positional fix if present; otherwise use generic path correction
+            suggested_tokens = _strip_kubectl_ns(suggested_tokens)
             if not result.corrected_command:
                 result.corrected_command = " ".join(suggested_tokens)
 
+    # Build available flags for THIS subcommand only (not global), with help text
+    seen_keys = set()
+    available_flags = []
+    available_flags_with_help = []
+    for finfo in info.flags.values():
+        key = (tuple(sorted(finfo.names)), bool(finfo.takes_value), finfo.desc)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        names_sorted = sorted(finfo.names, key=lambda n: (0 if n.startswith('--') else 1, n))
+        label = ", ".join(names_sorted)
+        if finfo.takes_value:
+            label += " (value)"
+        available_flags.append(label)
+        available_flags_with_help.append({
+            "names": names_sorted,
+            "takes_value": finfo.takes_value,
+            "desc": finfo.desc,
+        })
+    result.available_flags = sorted(available_flags)
+    result.available_flags_with_help = sorted(available_flags_with_help, key=lambda d: (0 if d["names"][0].startswith("--") else 1, d["names"][0]))
+
     return result.to_dict()
 
-# ---------------------------
-# Helpers
-# ---------------------------
+# =========================================
+# Parsing helpers
+# =========================================
 _SECTION_CMD = re.compile(r"^\s*Available Commands:\s*$", re.IGNORECASE)
 _SECTION_FLAGS = re.compile(r"^\s*Flags:\s*$", re.IGNORECASE)
 _SECTION_GLOBAL = re.compile(r"^\s*Global Flags:\s*$", re.IGNORECASE)
@@ -340,7 +369,7 @@ def _get_help_info(path: List[str], cache: Dict[Tuple[str, ...], HelpInfo], logg
         return None
 
     text = raw.get("stdout", "") or ""
-    info = _parse_help_text(text)
+    info = _parse_help_text(text, path)  # pass exact path for Usage parsing
     cache[key] = info
     return info
 
@@ -348,7 +377,7 @@ def _parse_usage_positionals(lines: List[str], path_tokens: List[str]) -> Tuple[
     """
     From 'Usage:' section, find the line for the current path, e.g.:
       Usage:
-        argocd app manifests APPNAME [flags]
+        argocd app get APPNAME [flags]
     Return (required_positionals, optional_positionals) based on tokens after the path.
     Uppercase tokens are treated as placeholders. Bracketed tokens are optional.
     """
@@ -361,7 +390,7 @@ def _parse_usage_positionals(lines: List[str], path_tokens: List[str]) -> Tuple[
             i += 1
             while i < len(lines) and lines[i].strip():
                 line = lines[i].strip()
-                if line.startswith(path_str + " "):
+                if line.startswith(path_str + " ") or line == path_str:
                     tail = line[len(path_str):].strip()
                     toks = tail.split()
                     for t in toks:
@@ -377,7 +406,7 @@ def _parse_usage_positionals(lines: List[str], path_tokens: List[str]) -> Tuple[
         i += 1
     return required, optional
 
-def _parse_help_text(text: str) -> HelpInfo:
+def _parse_help_text(text: str, path_tokens: List[str]) -> HelpInfo:
     lines = text.splitlines()
 
     subcommands: Set[str] = set()
@@ -414,35 +443,21 @@ def _parse_help_text(text: str) -> HelpInfo:
                 names_raw = (m.group("names") or "").strip()
                 ftype = (m.group("type") or "").strip().lower()
                 takes_value = ftype not in ("", "bool", "count")
+                desc = (m.group("desc") or "").strip()
 
                 names = [n.strip() for n in names_raw.split(",") if n.strip()]
                 name_set = set(names)
                 canonical = next((n for n in names if n.startswith("--")), names[0]) if names else ""
 
-                finfo = FlagInfo(names=name_set, takes_value=takes_value, canonical=canonical)
+                finfo = FlagInfo(names=name_set, takes_value=takes_value, canonical=canonical, desc=desc)
                 target = flags if section == "flags" else global_flags
                 for n in name_set:
                     target[n] = finfo
 
         i += 1
 
-    # ---- Extract positionals from Usage: ----
-    path_tokens: List[str] = []
-    for ln in lines:
-        s = ln.strip()
-        if s.startswith("argocd "):
-            parts = s.split()
-            path_tokens = []
-            for p in parts:
-                if p.startswith("-"):
-                    break
-                if p.isupper():
-                    break
-                path_tokens.append(p)
-            if path_tokens and path_tokens[0] == "argocd":
-                break
-
-    req_pos, opt_pos = _parse_usage_positionals(lines, path_tokens or ["argocd"])
+    # ---- Extract positionals from Usage for THIS exact path ----
+    req_pos, opt_pos = _parse_usage_positionals(lines, path_tokens)
 
     return HelpInfo(
         subcommands=subcommands,
@@ -458,14 +473,35 @@ def _split_flag_value(flag_token: str) -> Tuple[str, Optional[str]]:
         return name, val
     return flag_token, None
 
+def _apply_corrected_path(tokens: List[str], path: List[str]) -> List[str]:
+    rebuilt = ["argocd"] + path[1:]
+    j = 1
+    i = 1
+    while i < len(tokens) and j < len(path):
+        if tokens[i].startswith("-"):
+            break
+        if tokens[i] == path[j]:
+            i += 1
+            j += 1
+        else:
+            i += 1
+    rebuilt.extend(tokens[i:])
+    return rebuilt
+
+def _strip_kubectl_ns(tokens: List[str]) -> List[str]:
+    out: List[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] == "-n":
+            if i + 1 < len(tokens) and not tokens[i+1].startswith("-"):
+                i += 2
+                continue
+        out.append(tokens[i])
+        i += 1
+    return out
+
 def _maybe_build_correction(tokens: List[str], path: List[str],
                             cache: Dict[Tuple[str, ...], HelpInfo], logger=None) -> Optional[List[str]]:
-    """
-    Rebuild a corrected command using the 'path' we've derived (which may include
-    an auto-corrected subcommand). We align the corrected subcommand sequence
-    against the original tokens and SKIP any unmatched/incorrect subcommand tokens
-    from the original before appending flags/args.
-    """
     if len(path) <= 1:
         return None
 
@@ -480,6 +516,5 @@ def _maybe_build_correction(tokens: List[str], path: List[str],
             j += 1
         else:
             i += 1
-
     rebuilt.extend(tokens[i:])
     return rebuilt
