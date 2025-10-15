@@ -1,10 +1,14 @@
 # review_argocd_command.py
 """
-Argo CD command reviewer (handles global flags like --server and recognizes -o/--output).
-- Reviews only the argocd segment before any pipe/AND/colon.
-- Consumes GLOBAL flags before/between subcommands, then descends to the final subcommand.
-- Parses exact Usage to detect required/optional positionals.
-- Lists non-global flags (with help) for the final subcommand.
+Argo CD command reviewer (with --server normalization & safety checks).
+
+What’s new:
+- Reviews only the argocd segment before any '|', '||', '&', '&&', ':'
+- Consumes GLOBAL flags (e.g., --server) before/between subcommands
+- Recognizes -o/--output for `app get`
+- Detects bare host in --server; suggests 'https://' prefix
+- Flags shell metacharacters inside the --server value
+- Lists non-global flags for the final subcommand with help text
 """
 
 import os
@@ -130,19 +134,46 @@ def review_command(command: str, logger=None) -> Dict:
                     g[n] = finfo
         return g
 
+    # --- Walk subcommands, but consume GLOBAL flags anywhere before/between them ---
     while idx < len(tokens):
         t = tokens[idx]
 
-        # Allow and consume GLOBAL flags anywhere before/between subcommands
+        # Consume global flags (e.g., --server) even before subcommands
         if t.startswith("-"):
             glookup = _collect_global_flag_lookup(help_cache)
             fname, val_inline = _split_flag_value(t)
             finfo = glookup.get(fname)
+
             if finfo:
-                idx += 1
-                if finfo.takes_value and val_inline is None:
-                    if idx < len(tokens) and (not tokens[idx].startswith("-")) and (tokens[idx] not in info.subcommands):
-                        idx += 1
+                # Safety & normalization for --server
+                if finfo.canonical == "--server":
+                    # Extract the value (inline or next token)
+                    server_val, n_consumed = _extract_flag_value(tokens, idx, val_inline)
+                    if server_val is None:
+                        result.missing_flag_values.append("--server")
+                    else:
+                        # Check for metacharacters and scheme presence
+                        if re.search(r"[|&;<>]", server_val):
+                            result.errors.append("The --server value contains shell metacharacters (|, &, ;, <, >).")
+                        if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", server_val):
+                            suggestion = "https://" + server_val
+                            result.warnings.append("The --server value looks like a bare host. Consider adding a scheme, e.g., 'https://'")
+                            # Suggest corrected command with scheme added
+                            corrected = tokens[:]
+                            if val_inline is not None:
+                                # replace inline
+                                corrected[idx] = f"--server={suggestion}"
+                            else:
+                                # replace next token
+                                corrected[idx+1] = suggestion
+                            result.corrected_command = " ".join(corrected)
+                    idx += n_consumed
+                else:
+                    # Generic global flag consumption
+                    idx += 1
+                    if finfo.takes_value and val_inline is None:
+                        if idx < len(tokens) and (not tokens[idx].startswith("-")) and (tokens[idx] not in info.subcommands):
+                            idx += 1
                 continue
             break  # Non-global flag encountered; subcommand walk ends
 
@@ -392,6 +423,14 @@ def _split_flag_value(flag_token: str) -> Tuple[str, Optional[str]]:
     if "=" in flag_token and not flag_token.startswith(("'", "\"")):
         name, val = flag_token.split("=", 1); return name, val
     return flag_token, None
+
+def _extract_flag_value(tokens: List[str], idx: int, val_inline: Optional[str]) -> Tuple[Optional[str], int]:
+    """Return (value, tokens_consumed). If inline, consumes 1; else if next token is value, consumes 2; else 1 with None."""
+    if val_inline is not None:
+        return val_inline, 1
+    if idx + 1 < len(tokens) and not tokens[idx+1].startswith("-"):
+        return tokens[idx+1], 2
+    return None, 1
 
 def _apply_corrected_path(tokens: List[str], path: List[str]) -> List[str]:
     rebuilt = ["argocd"] + path[1:]
