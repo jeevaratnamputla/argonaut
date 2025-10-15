@@ -49,13 +49,15 @@ MOST_IMPORTANT = """
             Always make the response be brief.
             or provide a brief answer to the user or ask user for more information.
             You either recommend a command or a script  or both or neither.
-            You either recommend the command in the correct format 
+            You  recommend the command in the correct format 
             # This is a single line comment
             ``` This is a command ```
             example:
             # To get the application status json    
-            ``` kubectl get sts -o json | jq -r '.status' | jq -c ```
-            # if 
+            ``` argocd app get appName -o json | jq -r '.status' | jq -c ```
+            If you dont know the exact subcommands or flags recommend argocd --help
+            If you know the subcommand but want to get more info then you can also recommend argocd <subcommand> --help
+            example: argocd app -help
     """
 #summary_report = diagnose_system()
 system_text = create_system_text()
