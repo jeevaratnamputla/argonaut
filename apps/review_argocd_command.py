@@ -165,22 +165,51 @@ def review_command(command: str, logger=None) -> Dict:
         return result.to_dict()
 
     # Identify subcommand path (stop at first token that isn't a known subcommand)
+# Identify subcommand path, but allow GLOBAL flags anywhere before/between subcommands
     idx = 1
     info = root_info
+
+    def _collect_global_flag_lookup(cache: Dict[Tuple[str, ...], HelpInfo]) -> Dict[str, FlagInfo]:
+        g = {}
+        for hi in cache.values():
+            for finfo in hi.global_flags.values():
+                for n in finfo.names:
+                    g[n] = finfo
+        return g
+
     while idx < len(tokens):
         t = tokens[idx]
-        if t.startswith("-"):
-            break  # flags/args begin
 
-        # If this level has NO subcommands, the next non-flag is positional.
+        # 1) If token is a flag, try to consume it as a GLOBAL flag and continue descending.
+        if t.startswith("-"):
+            glookup = _collect_global_flag_lookup(help_cache)
+            fname, val_inline = _split_flag_value(t)
+            finfo = glookup.get(fname)
+
+            if finfo:
+                # Consume the global flag token
+                idx += 1
+                # If it takes a value and it's provided inline (--flag=val), we're done.
+                if finfo.takes_value and val_inline is None:
+                    # Only consume the *next* token as the value if it looks like a value
+                    # (i.e., not another flag and not a known subcommand at this level).
+                    if idx < len(tokens) and (not tokens[idx].startswith("-")) and (tokens[idx] not in info.subcommands):
+                        idx += 1
+                # Continue scanning for subcommands after global flags
+                continue
+
+            # Not a known GLOBAL flag → stop walking subcommands here; the rest are flags/args
+            break
+
+        # 2) If this level has NO subcommands at all, treat next non-flag as a positional (Usage-driven).
         if not info.subcommands:
             break
 
-        # If Usage for this level declares positionals, treat the next non-flag as positional.
+        # 3) If Usage declares positionals for this level, treat the next non-flag as positional.
         if (info.required_positionals or info.optional_positionals) and t not in info.subcommands:
             break
 
-        # Regular descent through known subcommands
+        # 4) Regular descent through known subcommands
         if t in info.subcommands:
             path.append(t)
             info = _get_help_info(path, help_cache, logger)
@@ -190,7 +219,7 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
 
-        # Unknown token where subcommand expected → offer suggestions
+        # 5) Unknown token where a subcommand was expected → suggest closest matches
         close = difflib.get_close_matches(t, sorted(info.subcommands), n=3, cutoff=0.6)
         result.errors.append(f"Unknown subcommand '{t}' under '{' '.join(path)}'.")
         if close:
@@ -204,9 +233,7 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
         else:
-            # Can't descend further; treat remaining tokens as args/flags
             break
-
     result.parsed_path = path[:]
 
     # Merge flags from all cached global flags + current level flags
