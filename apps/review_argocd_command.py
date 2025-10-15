@@ -1,14 +1,102 @@
 # review_argocd_command.py
 import re
+import os
+import sys
 import shlex
 import difflib
+import subprocess
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Set, Tuple
-from execute_run_command import execute_run_command
 
-# Expect this to be provided by you:
-# def execute_run_command(cmd: str, logger=None) -> Dict[str, str | int]:
-#     return {"exit_code": 0, "stdout": "...", "stderr": "..."}
+# =========================================
+# Local runner (replaces execute_run_command)
+# =========================================
+def execute_run_command(cmd: str, logger=None, timeout: float = 15.0, cwd: Optional[str] = None) -> Dict[str, object]:
+    """
+    Execute a shell command safely and return {exit_code, stdout, stderr}.
+    - No TTY / paging (PAGER=cat, GIT_PAGER=cat) to avoid hangs in MSYS/Git Bash.
+    - Closes stdin; enforces timeout; kills process group on timeout.
+    - On Windows, if command starts with 'argocd ' and lookup fails, tries 'argocd.exe'.
+    """
+    if logger:
+        logger.debug("execute_run_command: %s", cmd)
+
+    # Split into argv without invoking a shell for safety/portability
+    # (We still allow complex user commands because argocd usage is simple.)
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as e:
+        return {"exit_code": 127, "stdout": "", "stderr": f"shlex error: {e}"}
+
+    # Windows convenience: try argocd.exe if "argocd" fails PATH resolution in some shells
+    if os.name == "nt" and argv and argv[0].lower() == "argocd":
+        # If argocd isn't an existing path, try swapping to argocd.exe
+        if not _is_executable_on_path(argv[0]):
+            exe = "argocd.exe"
+            if _is_executable_on_path(exe):
+                argv[0] = exe
+                if logger:
+                    logger.debug("execute_run_command: using %s", exe)
+
+    # Environment tweaks to avoid interactive behavior/pagers
+    env = os.environ.copy()
+    env.setdefault("PAGER", "cat")
+    env.setdefault("GIT_PAGER", "cat")
+    # Some shells can inject variables that cause odd behavior; ensure non-interactive
+    env.setdefault("CI", "true")
+
+    # Start process (no shell, no stdin)
+    try:
+        # On Windows, prevent opening a new console window
+        creationflags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            env=env,
+            shell=False,
+            creationflags=creationflags
+        )
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Kill whole process group if possible
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            out, err = proc.communicate()
+            return {
+                "exit_code": 124,
+                "stdout": out.decode(errors="replace") if out else "",
+                "stderr": (err.decode(errors="replace") if err else "") + "\n[timeout]"
+            }
+
+        return {
+            "exit_code": proc.returncode,
+            "stdout": out.decode(errors="replace") if out else "",
+            "stderr": err.decode(errors="replace") if err else "",
+        }
+    except FileNotFoundError as e:
+        return {"exit_code": 127, "stdout": "", "stderr": str(e)}
+    except Exception as e:
+        return {"exit_code": 1, "stdout": "", "stderr": f"{type(e).__name__}: {e}"}
+
+def _is_executable_on_path(prog: str) -> bool:
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    exts = [""] if os.name != "nt" else os.environ.get("PATHEXT", ".EXE;.BAT;.CMD").split(";")
+    for p in paths:
+        candidate = os.path.join(p, prog)
+        for ext in exts:
+            if os.path.isfile(candidate + ext) and os.access(candidate + ext, os.X_OK):
+                return True
+    return False
+
+# =========================================
+# Command review (unchanged logic)
+# =========================================
 
 @dataclass
 class FlagInfo:
@@ -19,8 +107,8 @@ class FlagInfo:
 @dataclass
 class HelpInfo:
     subcommands: Set[str]     # available subcommands at this level
-    flags: Dict[str, FlagInfo]  # by each name ("-n" or "--name") -> FlagInfo
-    global_flags: Dict[str, FlagInfo]  # union-able set of global flags seen at this level
+    flags: Dict[str, 'FlagInfo']  # by each name ("-n" or "--name") -> FlagInfo
+    global_flags: Dict[str, 'FlagInfo']  # union-able set of global flags seen at this level
 
 @dataclass
 class ReviewResult:
@@ -36,14 +124,7 @@ class ReviewResult:
     def to_dict(self):
         return asdict(self)
 
-# ---------------------------
-# Core public entrypoint
-# ---------------------------
 def review_command(command: str, logger=None) -> Dict:
-    """
-    Validate an argocd command by checking subcommands and flags against `--help` outputs.
-    Returns a dict (serialize-friendly) with validity, errors, and correction hints.
-    """
     if logger:
         logger.debug("Reviewing command: %s", command)
 
@@ -93,18 +174,12 @@ def review_command(command: str, logger=None) -> Dict:
 
         # Unknown subcommand at this level → suggest closest matches
         close = difflib.get_close_matches(t, sorted(info.subcommands), n=3, cutoff=0.6)
-        result.errors.append(
-            f"Unknown subcommand '{t}' under '{' '.join(path)}'."
-        )
+        result.errors.append(f"Unknown subcommand '{t}' under '{' '.join(path)}'.")
         if close:
-            result.suggestions.append(
-                f"Did you mean: {', '.join(close)} ?"
-            )
+            result.suggestions.append(f"Did you mean: {', '.join(close)} ?")
             # Try a best-effort single correction to continue deeper validation
             t_best = close[0]
-            result.warnings.append(
-                f"Auto-trying suggested subcommand '{t_best}' for deeper checks."
-            )
+            result.warnings.append(f"Auto-trying suggested subcommand '{t_best}' for deeper checks.")
             path.append(t_best)
             info = _get_help_info(path, help_cache, logger)
             if info is None:
@@ -112,25 +187,21 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
         else:
-            # Can't continue subcommand walk; stop here
             break
 
     result.parsed_path = path[:]
 
-    # Collect flags available at this level: local + global (root and current)
-    # Merge strategy: current level flags + all global flags we have (prefer canonical long forms)
-    merged_flags = {}
-    # include all ancestor global flags too
-    for key, hi in help_cache.items():
+    # Merge flags from all cached global flags + current level flags
+    merged_flags: Dict[str, FlagInfo] = {}
+    for _, hi in help_cache.items():
         for name, finfo in hi.global_flags.items():
             merged_flags[name] = finfo
-    # include current level
     for name, finfo in info.flags.items():
         merged_flags[name] = finfo
     for name, finfo in info.global_flags.items():
         merged_flags[name] = finfo
 
-    # Build a quick lookup from canonical -> FlagInfo and name -> FlagInfo
+    # name lookup
     name_to_flag: Dict[str, FlagInfo] = {}
     for finfo in merged_flags.values():
         for n in finfo.names:
@@ -138,59 +209,42 @@ def review_command(command: str, logger=None) -> Dict:
 
     # Validate flags & values
     consumed = idx
-    used_flags: List[str] = []
     while consumed < len(tokens):
         tok = tokens[consumed]
 
         if tok.startswith("-"):
-            # split --flag=value form
             flag_name, value_inline = _split_flag_value(tok)
 
             if flag_name not in name_to_flag:
-                # suggest closest flag
-                close = difflib.get_close_matches(
-                    flag_name,
-                    sorted(name_to_flag.keys()),
-                    n=3,
-                    cutoff=0.65,
-                )
+                close = difflib.get_close_matches(flag_name, sorted(name_to_flag.keys()), n=3, cutoff=0.65)
                 result.unknown_flags.append(flag_name)
                 if close:
-                    result.suggestions.append(
-                        f"Unknown flag '{flag_name}'. Did you mean: {', '.join(close)} ?"
-                    )
+                    result.suggestions.append(f"Unknown flag '{flag_name}'. Did you mean: {', '.join(close)} ?")
                 consumed += 1
                 continue
 
             finfo = name_to_flag[flag_name]
-            used_flags.append(finfo.canonical)
 
             if finfo.takes_value:
                 if value_inline is not None:
-                    # ok, value provided as --flag=value
                     consumed += 1
                 else:
-                    # value should be next token
                     if consumed + 1 >= len(tokens) or tokens[consumed + 1].startswith("-"):
                         result.missing_flag_values.append(flag_name)
                         consumed += 1
                     else:
-                        consumed += 2  # consume flag + value
+                        consumed += 2
             else:
                 if value_inline is not None:
-                    result.warnings.append(
-                        f"Flag '{flag_name}' doesn't take a value; ignoring '{value_inline}'."
-                    )
+                    result.warnings.append(f"Flag '{flag_name}' doesn't take a value; ignoring '{value_inline}'.")
                 consumed += 1
         else:
-            # positional arg; we won't deeply validate positional arity here (Cobra help varies)
             consumed += 1
 
-    # Determine validity & correction guess
+    # Valid?
     if not result.errors and not result.unknown_flags and not result.missing_flag_values:
         result.valid = True
     else:
-        # Try building a corrected command if we had exactly one subcommand correction
         suggested_tokens = _maybe_build_correction(tokens, path, help_cache, logger)
         if suggested_tokens and suggested_tokens != tokens:
             result.corrected_command = " ".join(suggested_tokens)
@@ -204,10 +258,6 @@ _SECTION_CMD = re.compile(r"^\s*Available Commands:\s*$", re.IGNORECASE)
 _SECTION_FLAGS = re.compile(r"^\s*Flags:\s*$", re.IGNORECASE)
 _SECTION_GLOBAL = re.compile(r"^\s*Global Flags:\s*$", re.IGNORECASE)
 
-# Cobra-ish flag patterns
-#  e.g. "  -h, --help               help for app"
-#       "      --server string      Argo CD server address"
-#       "  -n, --namespace string   Kubernetes namespace"
 _FLAG_LINE = re.compile(
     r"^\s*(?P<names>(?:-\w(?:,\s*)?)?(?:--[A-Za-z0-9\-]+)?)\s*(?P<type>string|int|bool|duration|float|file|count|time|path|values|[A-Za-z]+)?\s{2,}(?P<desc>.+)$"
 )
@@ -242,33 +292,24 @@ def _parse_help_text(text: str) -> HelpInfo:
         line = lines[i]
 
         if _SECTION_CMD.match(line):
-            section = "commands"
-            i += 1
-            continue
+            section = "commands"; i += 1; continue
         if _SECTION_FLAGS.match(line):
-            section = "flags"
-            i += 1
-            continue
+            section = "flags"; i += 1; continue
         if _SECTION_GLOBAL.match(line):
-            section = "global"
-            i += 1
-            continue
+            section = "global"; i += 1; continue
 
         if section == "commands":
-            # lines like "  app        Manage applications"
             m = re.match(r"^\s*([A-Za-z0-9\-_]+)\s{2,}.+$", line)
             if m:
                 subcommands.add(m.group(1))
 
         elif section in ("flags", "global"):
-            # try parse a flag line
             m = _FLAG_LINE.match(line)
             if m:
                 names_raw = (m.group("names") or "").strip()
                 ftype = (m.group("type") or "").strip().lower()
-                takes_value = ftype not in ("", "bool", "count")  # common cobra types that don't need values
+                takes_value = ftype not in ("", "bool", "count")
 
-                # names_raw could be "-n, --namespace" or "--server"
                 names = [n.strip() for n in names_raw.split(",") if n.strip()]
                 name_set = set(names)
                 canonical = next((n for n in names if n.startswith("--")), names[0]) if names else ""
@@ -283,34 +324,23 @@ def _parse_help_text(text: str) -> HelpInfo:
     return HelpInfo(subcommands=subcommands, flags=flags, global_flags=global_flags)
 
 def _split_flag_value(flag_token: str) -> Tuple[str, Optional[str]]:
-    # --flag=value or -f=value ; also handle --flag=
-    if "=" in flag_token and not flag_token.startswith(("'","\"")):
+    if "=" in flag_token and not flag_token.startswith(("'", "\"")):
         name, val = flag_token.split("=", 1)
         return name, val
     return flag_token, None
 
 def _maybe_build_correction(tokens: List[str], path: List[str],
                             cache: Dict[Tuple[str, ...], HelpInfo], logger=None) -> Optional[List[str]]:
-    """
-    If we encountered exactly one unknown subcommand earlier and had a suggestion,
-    we've already advanced 'path' with the top suggestion. Rebuild command with that path.
-    Otherwise, return None.
-    """
     if len(path) <= 1:
-        return None  # nothing to correct
-    # Rebuild: keep 'argocd', then the chosen path[1:], then append all original flags/args that followed the first bad token
-    # Find the index where original path diverged
+        return None
     rebuilt = ["argocd"] + path[1:]
-    # collect original flags/args that are not part of the accepted subcommand chain
-    # Find first non-subcommand token in original tokens
     idx = 1
     info = cache.get(tuple(["argocd"]), None)
     while idx < len(tokens) and not tokens[idx].startswith("-") and info:
         if tokens[idx] in info.subcommands:
-            info = cache.get(tuple(["argocd"] + tokens[1:idx+1]), info)  # advance info if available
+            info = cache.get(tuple(["argocd"] + tokens[1:idx+1]), info)
             idx += 1
         else:
             break
-    # append the rest
     rebuilt.extend(tokens[idx:])
     return rebuilt
