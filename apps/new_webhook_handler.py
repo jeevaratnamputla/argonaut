@@ -57,7 +57,8 @@ MOST_IMPORTANT = """
             ``` argocd app get appName -o json | jq -r '.status' | jq -c ```
             If you dont know the exact subcommands or flags recommend argocd --help
             If you know the subcommand but want to get more info then you can also recommend argocd <subcommand> --help
-            example: argocd app -help
+            example: argocd app -help.
+            Recommend only one command at a time.
     """
 #summary_report = diagnose_system()
 system_text = create_system_text()
