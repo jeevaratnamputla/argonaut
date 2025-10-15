@@ -25,6 +25,7 @@ from create_system_text import create_system_text
 from execute_run_command import execute_run_command
 from summarize_conversation import summarize_conversation
 from send_response import send_response
+from test_review_command import run_review
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
@@ -171,22 +172,41 @@ def handle_event_text(payload, logger):
                 logger.info("No command found after code block — using fallback response")
                 return {"reponse": "No command found after code block — using fallback response"} 
             else:
-                output = execute_run_command(command, logger=logger) 
-                logger.info("Command: %s | Command Output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
-                #whatif the return code is not 0?
-                # we need to log the error and the resolution in a persisten location thread agnostic
-                response = f"TOOL Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
-                #whatif the response is too long
-                command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
-                role = "user"
-                content = command_output_handler_text + "\n" + response
-                update_message( thread_ts, role, content, logger=logger)
-                response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
-                role = "assistant"
-                content = response
-                response = "NAUT " + response
-                update_message( thread_ts, role, content, logger=logger)
-                send_response(payload, thread_ts, response, logger)
+                test_review = run_review(command, logger=logger)
+                if not test_review.get("valid", False):
+                    bad_command_handler_text = (
+                        "I have reviewed the command and found these issues:\n"
+                        + json.dumps(test_review, ensure_ascii=False, indent=2)
+                    )
+                    role = "user"
+                   #prior_response = response if "response" in locals() and isinstance(response, str) else ""
+                    #content = bad_command_handler_text + (("\n" + prior_response) if prior_response else "")
+                    content = bad_command_handler_text
+                    update_message(thread_ts, role, content, logger=logger)
+
+                    response = get_llm_response(thread_ts, max_response_tokens, temperature, logger=logger)
+                    role = "assistant"
+                    update_message(thread_ts, role, response, logger=logger)
+                    response = "NAUT " + response
+                    send_response(payload, thread_ts, response, logger)
+                    logger.info("Sent the bad command for analysis ...")
+                else:
+                    output = execute_run_command(command, logger=logger) 
+                    logger.info("Command: %s | Command Output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
+                    #whatif the return code is not 0?
+                    # we need to log the error and the resolution in a persisten location thread agnostic
+                    response = f"TOOL Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
+                    #whatif the response is too long
+                    command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources. Offer command options too"
+                    role = "user"
+                    content = command_output_handler_text + "\n" + response
+                    update_message( thread_ts, role, content, logger=logger)
+                    response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
+                    role = "assistant"
+                    content = response
+                    response = "NAUT " + response
+                    update_message( thread_ts, role, content, logger=logger)
+                    send_response(payload, thread_ts, response, logger)
 
         case "SUMMARIZE":
                 response = summarize_conversation(
