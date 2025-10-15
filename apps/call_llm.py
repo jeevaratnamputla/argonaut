@@ -157,15 +157,13 @@ def get_llm_response(thread_ts, max_response_tokens, temperature, logger=None):
         # 1) Bedrock (via webhook)
         if use_bedrock:
             provider = "BedrockWebhook"
-            enc_system = _encrypt_text(system_text, scope_id=str(thread_ts), logger=logger) if system_text else ""
             raw = _call_bedrock_webhook(
-                messages=non_system_msgs,         # already encrypted
-                system_text=enc_system,           # encrypted system
+                messages=non_system_msgs,   # already encrypted
+                system_text=system_text,    # already encrypted
                 temperature=temperature,
                 max_tokens=max_response_tokens,
                 logger=logger,
             )
-            # 🔓 NEW: decrypt model text before returning
             return _decrypt_text(raw, scope_id=str(thread_ts), logger=logger)
 
         # 2) OpenAI
