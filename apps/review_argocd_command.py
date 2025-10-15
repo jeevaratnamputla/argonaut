@@ -1,18 +1,14 @@
 # review_argocd_command.py
 """
-Argo CD command reviewer.
+Argo CD command reviewer (robust to global flags and pipes).
 
-- Walks `argocd ... --help` hierarchically (argocd, argocd app, argocd app get, ...)
-- Parses "Available Commands", "Flags" (non-global), "Global Flags"
-- Parses "Usage:" for the *exact* path to infer required/optional positionals
-- Validates subcommands and flags
-- Surfaces unknown flags, missing values
-- Suggests corrected command (e.g., manifest -> manifests; --app myapp -> positional)
-- Provides **non-global flags with help text** for the final subcommand
-
-Public API:
-    from review_argocd_command import review_command
-    res = review_command("argocd app manifest --app myapp -n argocd", logger=logger)
+Key features:
+- Reviews only the argocd segment before any '|', '||', '&', '&&', ':'.
+- Walks `argocd ... --help` hierarchically (argocd, argocd app, argocd app get, ...).
+- Parses "Available Commands", "Flags" (non-global), "Global Flags".
+- Parses exact "Usage:" line to infer required/optional positionals.
+- Consumes GLOBAL flags before/between subcommands (e.g., `--server` at root).
+- Returns per-flag help text for non-global flags at the final subcommand.
 """
 
 import os
@@ -134,6 +130,10 @@ def review_command(command: str, logger=None) -> Dict:
     if logger:
         logger.debug("Reviewing command: %s", command)
 
+    # Review only the argocd segment before any pipe/ampersand/colon
+    _separators_pattern = r"\s*(\|\||\||&&|&|:)\s*"
+    command = re.split(_separators_pattern, command, maxsplit=1)[0].strip()
+
     tokens = shlex.split(command)
     result = ReviewResult(
         valid=False,
@@ -164,13 +164,12 @@ def review_command(command: str, logger=None) -> Dict:
         result.errors.append("Failed to run 'argocd --help' or parse its output.")
         return result.to_dict()
 
-    # Identify subcommand path (stop at first token that isn't a known subcommand)
-# Identify subcommand path, but allow GLOBAL flags anywhere before/between subcommands
+    # Identify subcommand path, allowing GLOBAL flags anywhere before/between subcommands
     idx = 1
     info = root_info
 
     def _collect_global_flag_lookup(cache: Dict[Tuple[str, ...], HelpInfo]) -> Dict[str, FlagInfo]:
-        g = {}
+        g: Dict[str, FlagInfo] = {}
         for hi in cache.values():
             for finfo in hi.global_flags.values():
                 for n in finfo.names:
@@ -180,36 +179,29 @@ def review_command(command: str, logger=None) -> Dict:
     while idx < len(tokens):
         t = tokens[idx]
 
-        # 1) If token is a flag, try to consume it as a GLOBAL flag and continue descending.
+        # Consume global flags even before subcommands (e.g., --server, --auth-token)
         if t.startswith("-"):
             glookup = _collect_global_flag_lookup(help_cache)
             fname, val_inline = _split_flag_value(t)
             finfo = glookup.get(fname)
 
             if finfo:
-                # Consume the global flag token
                 idx += 1
-                # If it takes a value and it's provided inline (--flag=val), we're done.
                 if finfo.takes_value and val_inline is None:
-                    # Only consume the *next* token as the value if it looks like a value
-                    # (i.e., not another flag and not a known subcommand at this level).
                     if idx < len(tokens) and (not tokens[idx].startswith("-")) and (tokens[idx] not in info.subcommands):
                         idx += 1
-                # Continue scanning for subcommands after global flags
                 continue
+            break  # some non-global flag; stop subcommand descent
 
-            # Not a known GLOBAL flag → stop walking subcommands here; the rest are flags/args
-            break
-
-        # 2) If this level has NO subcommands at all, treat next non-flag as a positional (Usage-driven).
+        # If this level has NO subcommands, treat next token as positional
         if not info.subcommands:
             break
 
-        # 3) If Usage declares positionals for this level, treat the next non-flag as positional.
+        # If Usage declares positionals here, treat next non-flag as positional
         if (info.required_positionals or info.optional_positionals) and t not in info.subcommands:
             break
 
-        # 4) Regular descent through known subcommands
+        # Normal subcommand descent
         if t in info.subcommands:
             path.append(t)
             info = _get_help_info(path, help_cache, logger)
@@ -219,7 +211,7 @@ def review_command(command: str, logger=None) -> Dict:
             idx += 1
             continue
 
-        # 5) Unknown token where a subcommand was expected → suggest closest matches
+        # Unknown token at a subcommand junction
         close = difflib.get_close_matches(t, sorted(info.subcommands), n=3, cutoff=0.6)
         result.errors.append(f"Unknown subcommand '{t}' under '{' '.join(path)}'.")
         if close:
@@ -234,6 +226,7 @@ def review_command(command: str, logger=None) -> Dict:
             continue
         else:
             break
+
     result.parsed_path = path[:]
 
     # Merge flags from all cached global flags + current level flags
@@ -379,8 +372,10 @@ _SECTION_CMD = re.compile(r"^\s*Available Commands:\s*$", re.IGNORECASE)
 _SECTION_FLAGS = re.compile(r"^\s*Flags:\s*$", re.IGNORECASE)
 _SECTION_GLOBAL = re.compile(r"^\s*Global Flags:\s*$", re.IGNORECASE)
 
+# Improved flag line regex to capture both orders ("--output, -o" OR "-o, --output")
 _FLAG_LINE = re.compile(
-    r"^\s*(?P<names>(?:-\w(?:,\s*)?)?(?:--[A-Za-z0-9\-]+)?)\s*(?P<type>string|int|bool|duration|float|file|count|time|path|values|[A-Za-z]+)?\s{2,}(?P<desc>.+)$"
+    r"^\s*(?P<names>(?:-\w|--[A-Za-z0-9\-]+)(?:,\s*(?:-\w|--[A-Za-z0-9\-]+))*)\s*"
+    r"(?P<type>string|int|bool|duration|float|file|count|time|path|values|[A-Za-z]+)?\s{2,}(?P<desc>.+)$"
 )
 
 def _get_help_info(path: List[str], cache: Dict[Tuple[str, ...], HelpInfo], logger=None) -> Optional[HelpInfo]:
@@ -401,13 +396,6 @@ def _get_help_info(path: List[str], cache: Dict[Tuple[str, ...], HelpInfo], logg
     return info
 
 def _parse_usage_positionals(lines: List[str], path_tokens: List[str]) -> Tuple[List[str], List[str]]:
-    """
-    From 'Usage:' section, find the line for the current path, e.g.:
-      Usage:
-        argocd app get APPNAME [flags]
-    Return (required_positionals, optional_positionals) based on tokens after the path.
-    Uppercase tokens are treated as placeholders. Bracketed tokens are optional.
-    """
     required, optional = [], []
     path_str = " ".join(path_tokens)
 
@@ -440,7 +428,6 @@ def _parse_help_text(text: str, path_tokens: List[str]) -> HelpInfo:
     flags: Dict[str, FlagInfo] = {}
     global_flags: Dict[str, FlagInfo] = {}
 
-    # ---- Scan sections: Available Commands / Flags / Global Flags ----
     section = None
     i = 0
     while i < len(lines):
@@ -483,7 +470,6 @@ def _parse_help_text(text: str, path_tokens: List[str]) -> HelpInfo:
 
         i += 1
 
-    # ---- Extract positionals from Usage for THIS exact path ----
     req_pos, opt_pos = _parse_usage_positionals(lines, path_tokens)
 
     return HelpInfo(
