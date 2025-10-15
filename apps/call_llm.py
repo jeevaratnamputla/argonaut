@@ -8,6 +8,54 @@ from generic_storage import get_thread_messages
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 CLAUDE_BASE_URL = "https://api.anthropic.com/v1/"
+# Encryption service (Argonaut privacy-filter)
+PRIVACY_FILTER_URL = os.getenv("PRIVACY_FILTER_URL", "http://privacy-filter.argonaut.svc.cluster.local:7070")
+ENCRYPTION_ENABLED = os.getenv("ENCRYPTION_ENABLED", "false").strip().lower() == "true"
+ENCRYPTION_TIMEOUT = float(os.getenv("ENCRYPTION_TIMEOUT", "10"))
+
+
+def _enc_enabled() -> bool:
+    # Only encrypt if explicitly enabled and we have a URL
+    return ENCRYPTION_ENABLED and bool(PRIVACY_FILTER_URL)
+
+def _pf_post(endpoint: str, payload: Dict[str, Any], logger=None) -> Dict[str, Any]:
+    url = f"{PRIVACY_FILTER_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    try:
+        r = requests.post(url, json=payload, timeout=ENCRYPTION_TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        if logger:
+            logger.warning(f"[privacy-filter] {endpoint} failed: {e}. Proceeding without transform.")
+        # Return pass-through on failure
+        return {"text": payload.get("text", "")}
+
+def _encrypt_text(text: str, scope_id: str, logger=None) -> str:
+    if not _enc_enabled():
+        return text
+    resp = _pf_post("encrypt", {"text": text, "scope_id": scope_id, "enabled": True}, logger=logger)
+    return resp.get("text", text)
+
+def _decrypt_text(text: str, scope_id: str, logger=None) -> str:
+    if not _enc_enabled():
+        return text
+    resp = _pf_post("decrypt", {"text": text, "scope_id": scope_id}, logger=logger)
+    return resp.get("text", text)
+
+def _encrypt_messages(msgs: List[Dict[str, str]], scope_id: str, logger=None) -> List[Dict[str, str]]:
+    """Encrypts each message.content (string). Leaves roles intact."""
+    if not _enc_enabled():
+        return msgs
+    out: List[Dict[str, str]] = []
+    for m in msgs:
+        content = m.get("content", "")
+        if isinstance(content, str) and content:
+            enc = _encrypt_text(content, scope_id, logger=logger)
+            out.append({**m, "content": enc})
+        else:
+            out.append(m)
+    return out
+
 
 def _split_system(messages: List[Dict[str, str]]) -> tuple[str, List[Dict[str, str]]]:
     """If first message is system, return (system_text, remaining_messages)."""
@@ -92,40 +140,47 @@ def get_llm_response(thread_ts, max_response_tokens, temperature, logger=None):
     model_to_use = None
 
     try:
-        # Load history
+        # Load history (unchanged)
         msgs = get_thread_messages(thread_ts, logger=logger)
         chat_messages = [{
             "role": m.get("role", "") or "user",
             "content": m.get("content", "") or ""
         } for m in msgs]
 
-        # Extract system for Bedrock only
-        system_text, non_system_msgs = _split_system(chat_messages)
+        # 🔐 NEW: encrypt message contents (system/user/assistant) before we do anything else
+        # (scope_id = thread_ts gives “same-secret” equality inside this thread)
+        enc_messages = _encrypt_messages(chat_messages, scope_id=str(thread_ts), logger=logger)
 
-        # 1) Bedrock (via webhook to claude_chat.py)
+        # Extract system for Bedrock only (do it on the encrypted messages so system is protected too)
+        system_text, non_system_msgs = _split_system(enc_messages)
+
+        # 1) Bedrock (via webhook)
         if use_bedrock:
             provider = "BedrockWebhook"
-            return _call_bedrock_webhook(
-                messages=non_system_msgs,  # <-- user/assistant only
-                system_text=system_text,   # <-- sent separately
+            enc_system = _encrypt_text(system_text, scope_id=str(thread_ts), logger=logger) if system_text else ""
+            raw = _call_bedrock_webhook(
+                messages=non_system_msgs,         # already encrypted
+                system_text=enc_system,           # encrypted system
                 temperature=temperature,
                 max_tokens=max_response_tokens,
                 logger=logger,
             )
+            # 🔓 NEW: decrypt model text before returning
+            return _decrypt_text(raw, scope_id=str(thread_ts), logger=logger)
 
-        # 2) OpenAI (keep system message in messages)
+        # 2) OpenAI
         if openai_key:
             provider = "OpenAI"
             client = OpenAI(api_key=openai_key)
             model_to_use = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-        # 3) (Optional) Claude via OpenAI-compatible
+        # 3) Claude (OpenAI-compatible)
         elif claude_key:
             provider = "Claude(OpenAI-compat)"
             client = OpenAI(api_key=claude_key, base_url=CLAUDE_BASE_URL)
             model_to_use = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 
-        # 4) Gemini (OpenAI-compatible endpoint)
+        # 4) Gemini (OpenAI-compatible)
         elif gemini_key:
             provider = "Gemini(OpenAI-compat)"
             client = OpenAI(api_key=gemini_key, base_url=GEMINI_BASE_URL)
@@ -138,15 +193,18 @@ def get_llm_response(thread_ts, max_response_tokens, temperature, logger=None):
         if logger:
             logger.info(f"Using provider: {provider} with model: {model_to_use}")
 
-        # For OpenAI / Claude-compat / Gemini, pass the original list with system intact.
+        # For OpenAI/Claude-compat/Gemini, send the ENCRYPTED list with system intact
         completion = client.chat.completions.create(
-            messages=chat_messages,
+            messages=enc_messages,      # ⬅️ encrypted messages
             model=model_to_use,
             max_tokens=max_response_tokens,
             temperature=temperature,
             top_p=float(os.getenv("top_p", 0.5)),
         )
-        return completion.choices[0].message.content
+        raw_text = completion.choices[0].message.content or ""
+
+        # 🔓 Decrypt before returning
+        return _decrypt_text(raw_text, scope_id=str(thread_ts), logger=logger)
 
     except requests.HTTPError as e:
         if logger:
