@@ -1,13 +1,6 @@
 # review_argocd_command.py
 """
-Argo CD command reviewer (robust global-flag value consumption).
-- Reviews only the argocd segment before any '|', '||', '&', '&&', ':'
-- Consumes GLOBAL flags before/between subcommands
-  * If a global flag takes a value (e.g., --server), the next token is ALWAYS
-    consumed as the flag's value (unless provided inline), so hostnames like
-    'argocd.sandbox.opsmx.net' are never mistaken for subcommands.
-- Parses exact Usage to detect required/optional positionals
-- Lists non-global flags for the final subcommand with help text
+Argo CD command reviewer (fixes `-o json` with `--server` and reviews only the argocd segment).
 """
 
 import os
@@ -103,7 +96,7 @@ class ReviewResult:
 # ---------------- Public API ----------------
 def review_command(command: str, logger=None) -> Dict:
     if logger: logger.debug("Reviewing command: %s", command)
-    # Only review up to first pipe/amp/colon
+    # Only review the argocd segment before a pipe/amp/colon
     command = re.split(r"\s*(\|\||\||&&|&|:)\s*", command, maxsplit=1)[0].strip()
 
     tokens = shlex.split(command)
@@ -133,39 +126,36 @@ def review_command(command: str, logger=None) -> Dict:
                     g[n] = finfo
         return g
 
-    # --- Walk subcommands, but consume GLOBAL flags anywhere before/between them ---
+    # --- Walk subcommands; consume GLOBAL flags anywhere before/between them ---
     while idx < len(tokens):
         t = tokens[idx]
-
-        # Consume global flags (e.g., --server) even before subcommands
         if t.startswith("-"):
+            # Handle global flags
             glookup = _collect_global_flag_lookup(help_cache)
             fname, val_inline = _split_flag_value(t)
             finfo = glookup.get(fname)
-
             if finfo:
-                # ALWAYS consume the value for global flags that take a value
+                # Always consume value for global flags that take a value
                 if finfo.takes_value:
                     if val_inline is not None:
-                        idx += 1  # consumed inline form --flag=value
+                        idx += 1  # --flag=value
                     else:
-                        idx += 1  # consume the flag token
+                        idx += 1  # consume flag
                         if idx < len(tokens):
-                            idx += 1  # unconditionally consume the next token as the value
+                            idx += 1  # consume next token as value (unconditionally)
                         else:
                             result.missing_flag_values.append(fname)
                 else:
-                    idx += 1  # boolean/count style
+                    idx += 1
                 continue
-            break  # Non-global flag encountered; subcommand walk ends
-
-        # If no subcommands at this level, treat next non-flag as positional
+            break  # encountered a non-global flag → stop descent
+        # If no subcommands here, next non-flag is positional
         if not info.subcommands:
             break
-        # If Usage shows positionals at this level, stop descent and treat next as positional
+        # If Usage declares positionals here, treat next token as positional
         if (info.required_positionals or info.optional_positionals) and t not in info.subcommands:
             break
-
+        # Normal descent
         if t in info.subcommands:
             path.append(t)
             info = _get_help_info(path, help_cache, logger)
@@ -174,8 +164,7 @@ def review_command(command: str, logger=None) -> Dict:
                 return result.to_dict()
             idx += 1
             continue
-
-        # Unknown subcommand token
+        # Unknown subcommand; suggest
         close = difflib.get_close_matches(t, sorted(info.subcommands), n=3, cutoff=0.6)
         result.errors.append(f"Unknown subcommand '{t}' under '{' '.join(path)}'.")
         if close:
@@ -193,19 +182,19 @@ def review_command(command: str, logger=None) -> Dict:
 
     result.parsed_path = path[:]
 
-    # Build merged flag lookup: current-level non-global + all seen global flags
+    # ---- Build merged flag lookup for validation ----
     merged_flags: Dict[str, FlagInfo] = {}
-    # include all globals from cache
+    # All global flags from any visited level
     for hi in help_cache.values():
         for finfo in hi.global_flags.values():
             for n in finfo.names:
                 merged_flags[n] = finfo
-    # include current level non-global & global
+    # Non-global + global flags of the final subcommand level (ensure final level wins)
     for finfo in list(info.flags.values()) + list(info.global_flags.values()):
         for n in finfo.names:
             merged_flags[n] = finfo
 
-    # Validate flags & values starting where we stopped walking subcommands
+    # ---- Validate flags & values from idx onward ----
     consumed = idx
     while consumed < len(tokens):
         tok = tokens[consumed]
@@ -235,7 +224,7 @@ def review_command(command: str, logger=None) -> Dict:
         else:
             consumed += 1
 
-    # Required positionals check (best-effort)
+    # ---- Positional checks (best-effort) ----
     first_positional_idx = None
     scan_idx = idx
     while scan_idx < len(tokens):
@@ -249,51 +238,18 @@ def review_command(command: str, logger=None) -> Dict:
 
     if info.required_positionals:
         if first_positional_idx is None:
-            # Try salvaging '--app NAME'
-            app_name = None
-            for j in range(idx, len(tokens)):
-                if tokens[j] == "--app" and j + 1 < len(tokens) and not tokens[j+1].startswith("-"):
-                    app_name = tokens[j+1]; break
-                if tokens[j].startswith("--app="):
-                    app_name = tokens[j].split("=", 1)[1]; break
-            if app_name:
-                cleaned = tokens[:]
-                if "--app" in cleaned:
-                    k = cleaned.index("--app"); del cleaned[k:k+2]
-                else:
-                    cleaned = [t for t in cleaned if not t.startswith("--app=")]
-                cleaned = cleaned[:idx] + [app_name] + cleaned[idx:]
-                cleaned = _apply_corrected_path(cleaned, path)
-                cleaned = _strip_kubectl_ns(cleaned)
-                result.suggestions.append("Move the application name to a positional argument (no --app).")
-                result.corrected_command = " ".join(cleaned)
-            else:
-                result.errors.append(f"Missing required positional: {info.required_positionals[0]}")
-        else:
-            for j in range(idx, len(tokens)):
-                if tokens[j] == "--app" or tokens[j].startswith("--app="):
-                    result.warnings.append("Use positional APPNAME instead of --app for this subcommand.")
-                    break
+            result.errors.append(f"Missing required positional: {info.required_positionals[0]}")
 
-    # kubectl-style '-n <ns>' hint
-    for j in range(idx, len(tokens)):
-        if tokens[j] == "-n" and j + 1 < len(tokens) and not tokens[j+1].startswith("-"):
-            ns = tokens[j+1]
-            result.warnings.append(f"'-n {ns}' is not an Argo CD CLI flag.")
-            result.unknown_flags.append("-n")
-            break
-
-    # Valid?
+    # ---- Validity & corrections ----
     if not result.errors and not result.unknown_flags and not result.missing_flag_values:
         result.valid = True
     else:
         suggested_tokens = _maybe_build_correction(tokens, path, help_cache, logger)
         if suggested_tokens and suggested_tokens != tokens:
-            suggested_tokens = _strip_kubectl_ns(suggested_tokens)
             if not result.corrected_command:
                 result.corrected_command = " ".join(suggested_tokens)
 
-    # Only non-global flags for this subcommand (with help)
+    # ---- Present non-global flags with help for this subcommand ----
     seen_keys = set()
     available_flags = []
     available_flags_with_help = []
@@ -317,7 +273,7 @@ _SECTION_CMD = re.compile(r"^\s*Available Commands:\s*$", re.IGNORECASE)
 _SECTION_FLAGS = re.compile(r"^\s*Flags:\s*$", re.IGNORECASE)
 _SECTION_GLOBAL = re.compile(r"^\s*Global Flags:\s*$", re.IGNORECASE)
 
-# Robust to "--output, -o" OR "-o, --output"
+# Accepts both "--output, -o" and "-o, --output" forms
 _FLAG_LINE = re.compile(
     r"^\s*(?P<names>(?:-\w|--[A-Za-z0-9\-]+)(?:,\s*(?:-\w|--[A-Za-z0-9\-]+))*)\s*"
     r"(?P<type>string|int|bool|duration|float|file|count|time|path|values|[A-Za-z]+)?\s{2,}(?P<desc>.+)$"
@@ -405,24 +361,6 @@ def _split_flag_value(flag_token: str) -> Tuple[str, Optional[str]]:
     if "=" in flag_token and not flag_token.startswith(("'", "\"")):
         name, val = flag_token.split("=", 1); return name, val
     return flag_token, None
-
-def _apply_corrected_path(tokens: List[str], path: List[str]) -> List[str]:
-    rebuilt = ["argocd"] + path[1:]
-    j = 1; i = 1
-    while i < len(tokens) and j < len(path):
-        if tokens[i].startswith("-"): break
-        if tokens[i] == path[j]: i += 1; j += 1
-        else: i += 1
-    rebuilt.extend(tokens[i:]); return rebuilt
-
-def _strip_kubectl_ns(tokens: List[str]) -> List[str]:
-    out: List[str] = []; i = 0
-    while i < len(tokens):
-        if tokens[i] == "-n":
-            if i + 1 < len(tokens) and not tokens[i+1].startswith("-"):
-                i += 2; continue
-        out.append(tokens[i]); i += 1
-    return out
 
 def _maybe_build_correction(tokens: List[str], path: List[str],
                             cache: Dict[Tuple[str, ...], HelpInfo], logger=None) -> Optional[List[str]]:
