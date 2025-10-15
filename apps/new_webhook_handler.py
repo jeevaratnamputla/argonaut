@@ -178,7 +178,7 @@ def handle_event_text(payload, logger):
                 if review_target and review_target != command:
                     if logger:
                         logger.debug("Reviewing only argocd segment before separator: %s", review_target)
-                    test_review = run_review(review_target, logger=logger)
+                test_review = run_review(review_target, logger=logger)
                 if not test_review.get("valid", False):
                     bad_command_handler_text = (
                         "I have reviewed the command and found these issues:\n"
