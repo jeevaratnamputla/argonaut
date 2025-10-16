@@ -58,7 +58,7 @@ MOST_IMPORTANT = """
             ``` argocd app get appName -o json | jq -r '.status' | jq -c ```
             If you dont know the exact subcommands or flags recommend argocd --help
             If you know the subcommand but want to get more info then you can also recommend argocd <subcommand> --help
-            example: argocd app -help.
+            example: argocd app manifests --help.
             Recommend only one command at a time.
     """
 #summary_report = diagnose_system()
@@ -173,30 +173,30 @@ def handle_event_text(payload, logger):
                 return {"reponse": "No command found after code block — using fallback response"} 
             else:
                 # Re-evaluate only the Argo CD segment before any pipe/ampersand/colon operators
-                _separators_pattern = r"\s*(\|\||\||&&|&|;)\s*"
-                review_target = re.split(_separators_pattern, command, maxsplit=1)[0].strip()
-                if review_target and review_target != command:
-                    if logger:
-                        logger.debug("Reviewing only argocd segment before separator: %s", review_target)
-                test_review = run_review(review_target, logger=logger)
-                if not test_review.get("valid", False):
-                    bad_command_handler_text = (
-                        "I have reviewed the command and found these issues:\n"
-                        + json.dumps(test_review, ensure_ascii=False, indent=2)
-                    )
-                    role = "user"
-                   #prior_response = response if "response" in locals() and isinstance(response, str) else ""
-                    #content = bad_command_handler_text + (("\n" + prior_response) if prior_response else "")
-                    content = bad_command_handler_text
-                    update_message(thread_ts, role, content, logger=logger)
+                # _separators_pattern = r"\s*(\|\||\||&&|&|;)\s*"
+                # review_target = re.split(_separators_pattern, command, maxsplit=1)[0].strip()
+                # if review_target and review_target != command:
+                #     if logger:
+                #         logger.debug("Reviewing only argocd segment before separator: %s", review_target)
+                # test_review = run_review(review_target, logger=logger)
+                # if not test_review.get("valid", False):
+                #     bad_command_handler_text = (
+                #         "I have reviewed the command and found these issues:\n"
+                #         + json.dumps(test_review, ensure_ascii=False, indent=2)
+                #     )
+                #     role = "user"
+                #    #prior_response = response if "response" in locals() and isinstance(response, str) else ""
+                #     #content = bad_command_handler_text + (("\n" + prior_response) if prior_response else "")
+                #     content = bad_command_handler_text
+                #     update_message(thread_ts, role, content, logger=logger)
 
-                    response = get_llm_response(thread_ts, max_response_tokens, temperature, logger=logger)
-                    role = "assistant"
-                    update_message(thread_ts, role, response, logger=logger)
-                    response = "NAUT " + response
-                    send_response(payload, thread_ts, response, logger)
-                    logger.info("Sent the bad command for analysis ...")
-                else:
+                #     response = get_llm_response(thread_ts, max_response_tokens, temperature, logger=logger)
+                #     role = "assistant"
+                #     update_message(thread_ts, role, response, logger=logger)
+                #     response = "NAUT " + response
+                #     send_response(payload, thread_ts, response, logger)
+                #     logger.info("Sent the bad command for analysis ...")
+                # else:
                     output = execute_run_command(command, logger=logger) 
                     logger.info("Command: %s | Command Output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
                     #whatif the return code is not 0?
@@ -213,7 +213,7 @@ def handle_event_text(payload, logger):
                     response = "NAUT " + response
                     update_message( thread_ts, role, content, logger=logger)
                     send_response(payload, thread_ts, response, logger)
-                return response
+                    return response
 
         case "SUMMARIZE":
                 response = summarize_conversation(
@@ -297,49 +297,49 @@ def handle_event_text(payload, logger):
             # your run logic here
         case _ if event_text.startswith("RUN"):
             command = event_text[4:] # Extract the command after "RUN "
-            _separators_pattern = r"\s*(\|\||\||&&|&|;)\s*"
-            review_target = re.split(_separators_pattern, command, maxsplit=1)[0].strip()
-            if review_target and review_target != command:
-                if logger:
-                   logger.debug("Reviewing only argocd segment before separator: %s", review_target)
-            test_review = run_review(command, logger=logger)
-            if not test_review.get("valid", False):
-                    bad_command_handler_text = (
-                        "I have reviewed the command and found these issues:\n"
-                        + json.dumps(test_review, ensure_ascii=False, indent=2)
-                    )
-                    role = "user"
-                   #prior_response = response if "response" in locals() and isinstance(response, str) else ""
-                    #content = bad_command_handler_text + (("\n" + prior_response) if prior_response else "")
-                    content = bad_command_handler_text
-                    update_message(thread_ts, role, content, logger=logger)
+            # _separators_pattern = r"\s*(\|\||\||&&|&|;)\s*"
+            # review_target = re.split(_separators_pattern, command, maxsplit=1)[0].strip()
+            # if review_target and review_target != command:
+            #     if logger:
+            #        logger.debug("Reviewing only argocd segment before separator: %s", review_target)
+            # test_review = run_review(command, logger=logger)
+            # if not test_review.get("valid", False):
+            #         bad_command_handler_text = (
+            #             "I have reviewed the command and found these issues:\n"
+            #             + json.dumps(test_review, ensure_ascii=False, indent=2)
+            #         )
+            #         role = "user"
+            #        #prior_response = response if "response" in locals() and isinstance(response, str) else ""
+            #         #content = bad_command_handler_text + (("\n" + prior_response) if prior_response else "")
+            #         content = bad_command_handler_text
+            #         update_message(thread_ts, role, content, logger=logger)
 
-                    response = get_llm_response(thread_ts, max_response_tokens, temperature, logger=logger)
-                    role = "assistant"
-                    update_message(thread_ts, role, response, logger=logger)
-                    response = "NAUT " + response
-                    send_response(payload, thread_ts, response, logger)
-                    logger.info("Sent the bad command for analysis ...")
-            else:
-                logger.info("Running the suggested commands...")
+            #         response = get_llm_response(thread_ts, max_response_tokens, temperature, logger=logger)
+            #         role = "assistant"
+            #         update_message(thread_ts, role, response, logger=logger)
+            #         response = "NAUT " + response
+            #         send_response(payload, thread_ts, response, logger)
+            #         logger.info("Sent the bad command for analysis ...")
+            # else:
+            logger.info("Running the suggested commands...")
 
-                output = execute_run_command(command, logger=logger) 
-                
-                logger.info("Command: %s | Command output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
-                response = f"Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
-                #whatif response is too big?
-                command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
-                role = "user"
-                content = command_output_handler_text + "\n" + response
-                update_message( thread_ts, role, content, logger=logger)
-                response = "NAUT " + response
-                send_response(payload, thread_ts, response, logger)
-                response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
-                role = "assistant"
-                content = response
-                update_message( thread_ts, role, content, logger=logger)
-                response = "NAUT " + response
-                send_response(payload, thread_ts, response, logger)
+            output = execute_run_command(command, logger=logger) 
+            
+            logger.info("Command: %s | Command output: %s | Command Error: %s | Return Code: %s ", command, output["stdout"], output["stderr"], output["returncode"])
+            response = f"Command: {command}\nCommand Output:\n{output['stdout']}\nCommand Error:\n{output['stderr']}\nReturn Code:\n{output['returncode']}"
+            #whatif response is too big?
+            command_output_handler_text = "Be brief. Less than 75 words. Analyze this command output, if there are errors, try to fix them. Use the command with --help to get more info to fix the errors, example: ```argocd app manifests --help```. Recommend a new command if you can fix the errors, otherwise ask user for help. Summarize with a focus on which Problem Resources are not in Synced or Healthy state. We will later investigate those manifests of Problem Resources."
+            role = "user"
+            content = command_output_handler_text + "\n" + response
+            update_message( thread_ts, role, content, logger=logger)
+            response = "NAUT " + response
+            send_response(payload, thread_ts, response, logger)
+            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
+            role = "assistant"
+            content = response
+            update_message( thread_ts, role, content, logger=logger)
+            response = "NAUT " + response
+            send_response(payload, thread_ts, response, logger)
             return response
 
         case _:
