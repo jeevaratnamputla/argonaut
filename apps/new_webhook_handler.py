@@ -27,6 +27,14 @@ from summarize_conversation import summarize_conversation
 from send_response import send_response
 from test_review_command import run_review
 
+USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+
+try:
+    from graphs.run_graph import run_graph_entry
+except Exception:
+    run_graph_entry = None
+
+
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
 MAX_USER_INPUT_TOKENS = int(os.environ.get("MAX_USER_INPUT_TOKENS", 6000))
 CONVERSATION_URL = os.getenv("CONVERSATION_URL")
@@ -83,7 +91,14 @@ def handle_event_text(payload, logger):
             send_response(payload, thread_ts, response, logger)
             logger.info("Sent the HELP text ...")
             return {"reponse": "Sent the HELP text ..."}
-    
+    # if USE_LANGGRAPH and (event_text == "RUN" or event_text.startswith("RUN ")):
+    #     res = run_graph("RunCommandGraph", payload, logger)
+    #     if res is not None:
+    #         return res
+    if USE_LANGGRAPH and run_graph_entry and (event_text == "RUN" or    event_text.startswith("RUN ")):
+        res = run_graph_entry(payload, logger)
+        if res is not None:
+            return res
     if event_text.startswith("NAUT"):
             logger.info("Message not meant for Argonaut")
             return {"reponse": "Message not meant for Argonaut"} 
