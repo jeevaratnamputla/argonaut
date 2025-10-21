@@ -111,7 +111,7 @@ def handle_event_text(payload, logger):
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
-        logger.info("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
+        logger.debug("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
         update_message( thread_ts, role, content, logger=logger)
         role = "user"
         content = event_text + MOST_IMPORTANT
