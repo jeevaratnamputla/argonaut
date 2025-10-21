@@ -27,13 +27,7 @@ from summarize_conversation import summarize_conversation
 from send_response import send_response
 from test_review_command import run_review
 
-USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
-try:
-    from graphs.default_graph import run_default_graph_entry
-    #from graphs.run_graph import run_graph_entry
-except Exception:
-    #run_graph_entry = None
-    run_default_graph_entry = None
+
 
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
@@ -359,6 +353,15 @@ def handle_event_text(payload, logger):
             return response
 
         case _:
+
+            USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+            try:
+                from graphs.default_graph import run_default_graph_entry
+                #from graphs.run_graph import run_graph_entry
+            except Exception:
+                #run_graph_entry = None
+                run_default_graph_entry = None
+
             # Try LangGraph DefaultGraph first (only if enabled and import succeeded)
             if USE_LANGGRAPH and run_default_graph_entry:
                 logger.warning("going to run_default_graph_entry")
@@ -373,7 +376,7 @@ def handle_event_text(payload, logger):
                 if isinstance(res, dict) and res.get("handled"):
                     return res
             else:
-                logger.warning("going to same old logic")
+                logger.warning("going to same old logic, USE_LANGGRAPH=%s, run_default_graph_entry=%s", USE_LANGGRAPH, run_default_graph_entry is not None)
                 role = "user"
                 content = event_text
                 update_message( thread_ts, role, content, logger=logger)            
