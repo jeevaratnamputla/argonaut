@@ -52,7 +52,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the code
 COPY apps/*.py /app
-COPY apps/graphs/*.py /app
+RUN mkdir -p /app/graphs
+COPY apps/graphs/*.py /app/graphs
 
 # Expose port
 EXPOSE 5000
