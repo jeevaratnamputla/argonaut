@@ -28,11 +28,12 @@ from send_response import send_response
 from test_review_command import run_review
 
 USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
-
 try:
-    from graphs.run_graph import run_graph_entry
+    from graphs.default_graph import run_default_graph_entry
+    #from graphs.run_graph import run_graph_entry
 except Exception:
-    run_graph_entry = None
+    #run_graph_entry = None
+    run_default_graph_entry = None
 
 
 AUTO_RUN = os.getenv("AUTO_RUN", "false").lower() == "true"
@@ -95,10 +96,10 @@ def handle_event_text(payload, logger):
     #     res = run_graph("RunCommandGraph", payload, logger)
     #     if res is not None:
     #         return res
-    if USE_LANGGRAPH and run_graph_entry and (event_text == "RUN" or    event_text.startswith("RUN ")):
-        res = run_graph_entry(payload, logger)
-        if res is not None:
-            return res
+    # if USE_LANGGRAPH and run_graph_entry and (event_text == "RUN" or    event_text.startswith("RUN ")):
+    #     res = run_graph_entry(payload, logger)
+    #     if res is not None:
+    #         return res
     if event_text.startswith("NAUT"):
             logger.info("Message not meant for Argonaut")
             return {"reponse": "Message not meant for Argonaut"} 
@@ -111,7 +112,7 @@ def handle_event_text(payload, logger):
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
-        logger.debug("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
+        logger.DEBUG("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
         update_message( thread_ts, role, content, logger=logger)
         role = "user"
         content = event_text + MOST_IMPORTANT
@@ -358,6 +359,19 @@ def handle_event_text(payload, logger):
             return response
 
         case _:
+            # Try LangGraph DefaultGraph first (only if enabled and import succeeded)
+            if USE_LANGGRAPH and run_default_graph_entry:
+                res = run_default_graph_entry(
+                    payload,
+                    logger,
+                    max_response_tokens=max_response_tokens,
+                    temperature=temperature,
+                    auto_run=AUTO_RUN,
+                )
+                # If the graph fully handled the request, short-circuit legacy fallback
+                if isinstance(res, dict) and res.get("handled"):
+                    return res
+
             role = "user"
             content = event_text
             update_message( thread_ts, role, content, logger=logger)            
