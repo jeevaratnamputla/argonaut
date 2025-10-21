@@ -114,10 +114,10 @@ def handle_event_text(payload, logger):
         content = system_text
         #logger.DEBUG("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
         update_message( thread_ts, role, content, logger=logger)
-        role = "user"
-        content = event_text + MOST_IMPORTANT
-        update_message( thread_ts, role, content, logger=logger)
-       
+        # role = "user"
+        #content = event_text + MOST_IMPORTANT
+        # update_message( thread_ts, role, content, logger=logger)
+        payload[event_text] = event_text + MOST_IMPORTANT
         payload["isFirstMessage"] = "false"
         newpayload = payload
         handle_event_text(newpayload, logger)
@@ -361,6 +361,7 @@ def handle_event_text(payload, logger):
         case _:
             # Try LangGraph DefaultGraph first (only if enabled and import succeeded)
             if USE_LANGGRAPH and run_default_graph_entry:
+                logger.warning("going to run_default_graph_entry")
                 res = run_default_graph_entry(
                     payload,
                     logger,
@@ -372,24 +373,25 @@ def handle_event_text(payload, logger):
                 if isinstance(res, dict) and res.get("handled"):
                     return res
             else:
-            role = "user"
-            content = event_text
-            update_message( thread_ts, role, content, logger=logger)            
-            response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
-            role = "assistant"
-            content = response
-            update_message( thread_ts, role, content, logger=logger)
-    
-            if AUTO_RUN:
-                logger.info("AUTO_RUN set to True so running using command-runner %s", response)
-                newpayload = payload
-                newpayload["text"] = "RUN"
-                handle_event_text(newpayload, logger)
-            else:
-                logger.info("AUTO_RUN set to to False so asking user to issue RUN Keyword %s", response)
-                #response = "``` " + response + " ```"
-                response = "NAUT " + response + " type RUN all caps to run the command supplied OR type RUN your-own-command here to run your own"  
-                send_response(payload, thread_ts, response, logger)
+                logger.warning("going to same old logic")
+                role = "user"
+                content = event_text
+                update_message( thread_ts, role, content, logger=logger)            
+                response = get_llm_response( thread_ts, max_response_tokens, temperature, logger=logger)
+                role = "assistant"
+                content = response
+                update_message( thread_ts, role, content, logger=logger)
+        
+                if AUTO_RUN:
+                    logger.info("AUTO_RUN set to True so running using command-runner %s", response)
+                    newpayload = payload
+                    newpayload["text"] = "RUN"
+                    handle_event_text(newpayload, logger)
+                else:
+                    logger.info("AUTO_RUN set to to False so asking user to issue RUN Keyword %s", response)
+                    #response = "``` " + response + " ```"
+                    response = "NAUT " + response + " type RUN all caps to run the command supplied OR type RUN your-own-command here to run your own"  
+                    send_response(payload, thread_ts, response, logger)
 
 def route_source(request, logger):
     """
