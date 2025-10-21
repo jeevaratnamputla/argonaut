@@ -117,7 +117,7 @@ def handle_event_text(payload, logger):
         # role = "user"
         #content = event_text + MOST_IMPORTANT
         # update_message( thread_ts, role, content, logger=logger)
-        payload[text] = event_text + MOST_IMPORTANT
+        payload["text"] = event_text + MOST_IMPORTANT
         payload["isFirstMessage"] = "false"
         newpayload = payload
         handle_event_text(newpayload, logger)
