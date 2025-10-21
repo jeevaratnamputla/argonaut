@@ -112,7 +112,7 @@ def handle_event_text(payload, logger):
         send_response(payload, thread_ts, response, logger)
         role = "system"
         content = system_text
-        logger.DEBUG("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
+        #logger.DEBUG("Updating ES: thread_ts=%s, role=%s, content=%s", thread_ts, role, content)
         update_message( thread_ts, role, content, logger=logger)
         role = "user"
         content = event_text + MOST_IMPORTANT
@@ -371,7 +371,7 @@ def handle_event_text(payload, logger):
                 # If the graph fully handled the request, short-circuit legacy fallback
                 if isinstance(res, dict) and res.get("handled"):
                     return res
-
+            else:
             role = "user"
             content = event_text
             update_message( thread_ts, role, content, logger=logger)            
