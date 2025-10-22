@@ -1,7 +1,6 @@
+
 # graphs/default_graphs.py
-"""
-DefaultGraphs for Argonaut (default `case _`, NO auto-run) with structured logging.
-"""
+"""DefaultGraphs for Argonaut (default `case _`, NO auto-run) with structured logging."""
 from __future__ import annotations
 from typing import Any, Dict, TypedDict, Optional
 import os, time, uuid
@@ -46,6 +45,7 @@ class DefaultState(TypedDict, total=False):
     status: StatusState
     payload: Dict[str, Any]
     result: Dict[str, Any]
+    _logger: Any
 
 GRAPH_NAME = "DefaultGraph_NoAutoRun"
 
@@ -64,7 +64,8 @@ def _log(logger, level: str, **fields):
     except Exception:
         pass
 
-def node_bootstrap_thread(state: DefaultState, logger=None) -> DefaultState:
+def node_bootstrap_thread(state: DefaultState) -> DefaultState:
+    logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     payload = state["payload"]
     is_first = str(payload.get("isFirstMessage","false")).lower() == "true"
@@ -105,7 +106,8 @@ def node_bootstrap_thread(state: DefaultState, logger=None) -> DefaultState:
          run_id=state["audit"]["run_id"],thread_ts=thread_ts,is_first=is_first,has_system=has_system)
     return state
 
-def node_save_user_message(state: DefaultState, logger=None) -> DefaultState:
+def node_save_user_message(state: DefaultState) -> DefaultState:
+    logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     text = state.get("effective_user_text") or state.get("text","")
     update_message(thread_ts,"user",text,logger=logger)
@@ -116,7 +118,8 @@ def node_save_user_message(state: DefaultState, logger=None) -> DefaultState:
     state["status"]["updated_at"]=_now()
     return state
 
-def node_llm_respond(state: DefaultState, max_response_tokens:int, temperature:float, logger=None) -> DefaultState:
+def node_llm_respond(state: DefaultState, max_response_tokens:int, temperature:float) -> DefaultState:
+    logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     _log(logger,"info",node="llm_respond",step="calling_llm",
          run_id=state["audit"]["run_id"],thread_ts=thread_ts,max_tokens=max_response_tokens,temperature=temperature)
@@ -134,7 +137,8 @@ def node_llm_respond(state: DefaultState, max_response_tokens:int, temperature:f
     state["status"]["updated_at"]=_now()
     return state
 
-def node_save_assistant_message(state: DefaultState, logger=None) -> DefaultState:
+def node_save_assistant_message(state: DefaultState) -> DefaultState:
+    logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     response = state.get("response_text","")
     update_message(thread_ts,"assistant",response,logger=logger)
@@ -145,7 +149,8 @@ def node_save_assistant_message(state: DefaultState, logger=None) -> DefaultStat
     state["status"]["updated_at"]=_now()
     return state
 
-def node_post_prompt(state: DefaultState, logger=None) -> DefaultState:
+def node_post_prompt(state: DefaultState) -> DefaultState:
+    logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     payload = state["payload"]
     response = state.get("response_text","")
@@ -163,8 +168,11 @@ def node_post_prompt(state: DefaultState, logger=None) -> DefaultState:
 def _build_graph():
     g = StateGraph(DefaultState)
     def start(state: DefaultState) -> DefaultState:
+        logger = state.get("_logger")
         state["audit"]["step"]="start"
         state["status"]["updated_at"]=_now()
+        _log(logger,"debug",node="start",step="entered",run_id=state["audit"]["run_id"],
+             thread_ts=state["io"]["thread_ts"])
         return state
     g.add_node("start", start)
     g.add_node("bootstrap_thread", node_bootstrap_thread)
@@ -173,8 +181,7 @@ def _build_graph():
         cfg = config or {}
         return node_llm_respond(state,
                                 max_response_tokens=cfg.get("max_response_tokens",200),
-                                temperature=cfg.get("temperature",0.0),
-                                logger=cfg.get("logger"))
+                                temperature=cfg.get("temperature",0.0))
     g.add_node("llm_respond", llm_wrap)
     g.add_node("save_assistant_message", node_save_assistant_message)
     g.add_node("post_prompt", node_post_prompt)
@@ -200,20 +207,22 @@ def run_default_graph_entry(payload: Dict[str, Any], logger=None, *, max_respons
              max_tokens=max_response_tokens,temperature=temperature)
     except Exception:
         pass
-    state = {
-        "io":{"thread_ts": payload.get("thread_ts") or f"auto-{uuid.uuid4().hex[:12]}",
-              "channel": payload.get("channel"),
-              "user": payload.get("user")},
+    # Build state (store logger for all nodes)
+    state: DefaultState = {
+        "io": {"thread_ts": payload.get("thread_ts") or f"auto-{uuid.uuid4().hex[:12]}",
+               "channel": payload.get("channel"),
+               "user": payload.get("user")},
         "text": (payload.get("text") or "").strip(),
         "effective_user_text": (payload.get("text") or "").strip(),
-        "audit":{"graph_name":GRAPH_NAME,"run_id":uuid.uuid4().hex,"step":"build_state"},
-        "status":{"phase":"received","started_at":time.time(),"updated_at":time.time()},
-        "payload": dict(payload)
+        "audit": {"graph_name":GRAPH_NAME, "run_id":uuid.uuid4().hex, "step":"build_state"},
+        "status": {"phase":"received", "started_at":time.time(), "updated_at":time.time()},
+        "payload": dict(payload),
+        "_logger": logger,
     }
     _log(logger,"debug",node="entry",step="state_built",
          run_id=state["audit"]["run_id"],thread_ts=state["io"]["thread_ts"])
     out: DefaultState = DEFAULT_GRAPH.invoke(state, config={
-        "max_response_tokens": max_response_tokens, "temperature": temperature, "logger": logger
+        "max_response_tokens": max_response_tokens, "temperature": temperature
     })
     try:
         _log(logger,"info",node="exit",step="done",
