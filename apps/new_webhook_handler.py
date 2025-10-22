@@ -355,11 +355,11 @@ def handle_event_text(payload, logger):
         case _:
 
             USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+
             try:
-                from graphs.default_graph import run_default_graph_entry
-                #from graphs.run_graph import run_graph_entry
-            except Exception:
-                #run_graph_entry = None
+               from graphs.default_graph import run_default_graph_entry
+            except Exception as e:
+                logger.exception("Failed to import graphs.default_graph.run_default_graph_entry")
                 run_default_graph_entry = None
 
             # Try LangGraph DefaultGraph first (only if enabled and import succeeded)
