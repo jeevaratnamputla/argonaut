@@ -26,6 +26,8 @@ from execute_run_command import execute_run_command
 from summarize_conversation import summarize_conversation
 from send_response import send_response
 from test_review_command import run_review
+from graphs.default_graph import run_default_graph_entry
+
 
 
 
@@ -370,7 +372,6 @@ def handle_event_text(payload, logger):
                     logger,
                     max_response_tokens=max_response_tokens,
                     temperature=temperature,
-                    auto_run=AUTO_RUN,
                 )
                 # If the graph fully handled the request, short-circuit legacy fallback
                 if isinstance(res, dict) and res.get("handled"):
