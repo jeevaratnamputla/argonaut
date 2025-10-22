@@ -6,7 +6,7 @@ def create_system_text():
     try:
         with open(SYSTEM_TEXT_PATH, "r", encoding="utf-8") as f:
             system_text = f.read()
-        print(system_text)
+        #print(system_text)
         return system_text
     except Exception as e:
         print(f"Failed to read system text from {SYSTEM_TEXT_PATH}: {e}")
