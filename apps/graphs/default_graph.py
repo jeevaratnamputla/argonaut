@@ -1,11 +1,10 @@
-# graphs/default_graphs.py
+# graphs/default_graph.py
 """
-DefaultGraphs for Argonaut (extended default case) with structured logging and command review.
+DefaultGraph for Argonaut (extended default case) with structured logging and command review.
 MANDATORY FIXES ONLY:
 - Deterministic construction of `argocd ... --help` without asking the LLM.
-- No other behavioral changes.
+- Fixes SyntaxError on any(...) comprehension.
 """
-
 from __future__ import annotations
 from typing import Any, Dict, TypedDict, Optional
 import os, time, uuid, re
@@ -17,21 +16,16 @@ from generic_storage import update_message, get_thread_messages
 from call_llm import get_llm_response
 from execute_run_command import execute_run_command
 
-# System prompt builder
 try:
     from create_system_text import create_system_text
 except Exception:
     create_system_text = None
 
-# MOST_IMPORTANT guidance
 try:
     from new_webhook_handler import MOST_IMPORTANT
 except Exception:
     MOST_IMPORTANT = ""
 
-# ---------------------
-# State schema
-# ---------------------
 class IOState(TypedDict, total=False):
     thread_ts: str
     channel: Optional[str]
@@ -79,20 +73,11 @@ def _log(logger, level: str, **fields):
     except Exception:
         pass
 
-# --------------
-# Helper parsing
-# --------------
 SEPARATORS_PATTERN = re.compile(r"\s*(\|\||\||&&|&|;|:)\s*")
 
 def _extract_argocd_command(text: str) -> str:
-    """
-    Extract the first 'argocd ...' command.
-    Prefers fenced code blocks; falls back to inline.
-    Strips anything after separators like |, &&, ;, :
-    """
     if not text:
         return ""
-    # 1) fenced blocks ``` ... ```
     blocks = re.findall(r"```(?:bash|shell)?\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
     candidates = []
     for b in blocks:
@@ -100,7 +85,6 @@ def _extract_argocd_command(text: str) -> str:
             s = line.strip()
             if s.startswith("argocd "):
                 candidates.append(s)
-    # 2) inline search if none found
     if not candidates:
         for line in text.splitlines():
             s = line.strip()
@@ -109,25 +93,12 @@ def _extract_argocd_command(text: str) -> str:
     if not candidates:
         return ""
     cmd = candidates[0]
-    # strip after separators
     parts = SEPARATORS_PATTERN.split(cmd, maxsplit=1)
     if parts:
         cmd = parts[0].strip()
-    # remove trailing backticks or stray quotes
     return cmd.strip("` '\"")
 
 def _build_argocd_help_cmd(cmd: str) -> str:
-    """
-    Deterministically produce a help command from a detected argocd command.
-    Strategy:
-      - tokenize
-      - keep first up to 3 tokens: ["argocd", <group>, <sub>]
-      - append "--help"
-    Examples:
-      argocd app get app1 -o json          -> argocd app get --help
-      argocd app list -o json              -> argocd app list --help
-      argocd proj get myproj               -> argocd proj get --help
-    """
     if not cmd or not cmd.startswith("argocd "):
         return ""
     toks = cmd.split()
@@ -138,26 +109,20 @@ def _build_argocd_help_cmd(cmd: str) -> str:
         return ""
     return " ".join(prefix + ["--help"])
 
-# -----------------
-# Graph node logic
-# -----------------
 def node_bootstrap_thread(state: DefaultState) -> DefaultState:
     logger = state.get("_logger")
     thread_ts = state["io"]["thread_ts"]
     payload = state["payload"]
     is_first = str(payload.get("isFirstMessage","false")).lower() == "true"
-
-    # Check if a system message already exists
     has_system = False
     try:
         msgs = get_thread_messages(thread_ts, logger=logger) or []
-        has_system = any(m.get("role")=="system") for m in msgs
+        has_system = any(m.get("role") == "system" for m in msgs)
         _log(logger,"debug",node="bootstrap_thread",step="loaded_history",
              run_id=state["audit"]["run_id"],thread_ts=thread_ts,messages=len(msgs),has_system=has_system)
     except Exception as e:
         _log(logger,"warning",node="bootstrap_thread",step="history_failed",
              run_id=state["audit"]["run_id"],thread_ts=thread_ts,error=repr(e))
-
     if is_first or not has_system:
         sys_text = ""
         if create_system_text is not None:
@@ -179,7 +144,6 @@ def node_bootstrap_thread(state: DefaultState) -> DefaultState:
         _log(logger,"info",node="bootstrap_thread",step="most_important_appended",
              run_id=state["audit"]["run_id"],thread_ts=thread_ts,appended=bool(MOST_IMPORTANT))
         state["payload"]["isFirstMessage"] = "false"
-
     state["audit"]["step"]="bootstrap_thread"
     state["status"]["phase"]="received"
     state["status"]["updated_at"]=_now()
@@ -239,7 +203,6 @@ def node_detect_command(state: DefaultState) -> DefaultState:
     return state
 
 def node_review_command_llm(state: DefaultState, max_response_tokens:int, temperature:float) -> DefaultState:
-    """MANDATORY FIX: deterministically build the help command from detected_command (no LLM)."""
     logger = state.get("_logger")
     cmd = (state.get("detected_command") or "").strip()
     if not cmd:
@@ -260,7 +223,6 @@ def node_execute_help_command(state: DefaultState) -> DefaultState:
     _log(logger,"info",node="execute_help_command",step="run",cmd=help_cmd)
     result = execute_run_command(help_cmd, logger=logger)
     state["help_result"] = result or {}
-    # Persist as a message (kept as 'user' to preserve previous behavior)
     tool_msg = (
         f"TOOL Command: {help_cmd}\nCommand Output:\n{(result or {}).get('stdout','')}\n"
         f"Command Error:\n{(result or {}).get('stderr','')}\nReturn Code:\n{(result or {}).get('returncode','')}"
@@ -306,9 +268,6 @@ def node_post_prompt(state: DefaultState) -> DefaultState:
     state["status"]["updated_at"] = _now()
     return state
 
-# -----------------
-# Graph definition
-# -----------------
 def _build_graph():
     g = StateGraph(DefaultState)
     def start(state: DefaultState) -> DefaultState:
@@ -351,14 +310,12 @@ def _build_graph():
 
     g.add_node("post_prompt", node_post_prompt)
 
-    # Wiring
     g.set_entry_point("start")
     g.add_edge("start","bootstrap_thread")
     g.add_edge("bootstrap_thread","save_user_message")
     g.add_edge("save_user_message","llm_respond")
     g.add_edge("llm_respond","save_assistant_message")
     g.add_edge("save_assistant_message","detect_command")
-    # Conditional path: if a command exists, go through review->exec->refine, else straight to post_prompt
     def route_after_detect(state: DefaultState) -> str:
         return "review_command_llm" if state.get("detected_command") else "post_prompt"
     g.add_conditional_edges("detect_command", route_after_detect,
@@ -367,7 +324,6 @@ def _build_graph():
     g.add_edge("execute_help_command","refine_command_llm")
     g.add_edge("refine_command_llm","post_prompt")
     g.add_edge("post_prompt", END)
-
     return g.compile()
 
 DEFAULT_GRAPH = _build_graph()
@@ -383,7 +339,6 @@ def run_default_graph_entry(payload: Dict[str, Any], logger=None, *, max_respons
              max_tokens=max_response_tokens,temperature=temperature)
     except Exception:
         pass
-    # Build state (store logger for all nodes)
     state: DefaultState = {
         "io": {"thread_ts": payload.get("thread_ts") or f"auto-{uuid.uuid4().hex[:12]}",
                "channel": payload.get("channel"),
