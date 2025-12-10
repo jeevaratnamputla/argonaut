@@ -41,6 +41,11 @@ RUN curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/late
 #RUN curl -sSL -o /usr/local/bin/spin https://storage.googleapis.com/spinnaker-artifacts/spin/$(curl -s https://storage.googleapis.com/spinnaker-artifacts/spin/latest)/linux/amd64/spin && \
 # chmod +x /usr/local/bin/spin
 
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+RUN unzip awscliv2.zip
+
+RUN ./aws/install
+RUN ln -s /usr/local/bin/aws /usr/bin/
 
 
 # Set working directory
