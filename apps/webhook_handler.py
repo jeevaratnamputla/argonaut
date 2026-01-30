@@ -419,7 +419,7 @@ def process_email_in_background(data, logger):
         Returns:
             dict: Response from n8n webhook or error details.
         """
-        url = "http://n8n:5678/webhook/reply-mail"
+        url = "https://n8n:5678/webhook/reply-mail"
 
         logger.info("response as found in send_email_to_user: %s", response)
 
