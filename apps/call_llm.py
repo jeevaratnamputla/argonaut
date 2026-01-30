@@ -9,7 +9,7 @@ from generic_storage import get_thread_messages
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 CLAUDE_BASE_URL = "https://api.anthropic.com/v1/"
 # Encryption service (Argonaut privacy-filter)
-PRIVACY_FILTER_URL = os.getenv("PRIVACY_FILTER_URL", "http://privacy-filter.argonaut.svc.cluster.local:7070")
+PRIVACY_FILTER_URL = os.getenv("PRIVACY_FILTER_URL", "https://privacy-filter.argonaut.svc.cluster.local:7070")
 ENCRYPTION_ENABLED = os.getenv("ENCRYPTION_ENABLED", "false").strip().lower() == "true"
 ENCRYPTION_TIMEOUT = float(os.getenv("ENCRYPTION_TIMEOUT", "10"))
 
