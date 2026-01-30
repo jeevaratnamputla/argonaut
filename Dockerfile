@@ -61,6 +61,10 @@ COPY apps/*.py /app
 # Expose port
 EXPOSE 5000
 
+# Create a non-root user and switch to it
+RUN useradd --create-home --shell /bin/bash appuser
+USER appuser
+
 # Run the application
 CMD ["python", "flask_runner.py"]
 
