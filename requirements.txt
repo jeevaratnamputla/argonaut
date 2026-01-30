@@ -7,7 +7,7 @@ click==8.1.7
 distro==1.9.0
 elastic-transport==8.15.1
 elasticsearch==8.16.0
-Flask==3.1.0
+Flask==3.1.1
 httpx==0.28.0
 idna==3.10
 itsdangerous==2.2.0
