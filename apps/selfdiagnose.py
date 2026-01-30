@@ -7,10 +7,15 @@ from summarize_text import summarize_text
 
 def run_command(cmd):
     try:
-        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        # Split command string into list for shell=False security
+        if isinstance(cmd, str):
+            cmd_list = cmd.split()
+        else:
+            cmd_list = cmd
+        result = subprocess.run(cmd_list, shell=False, check=True, capture_output=True, text=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        return f"Error running '{cmd}': {e.stderr.strip()}"
+        return f"Error running '{' '.join(cmd_list) if isinstance(cmd_list, list) else cmd}': {e.stderr.strip()}"
 
 def diagnose_system():
     report = []
